@@ -270,6 +270,9 @@ Everything is changed on the device and saved to `data/settings.json`.
 
 ## 🍓 On the Raspberry Pi Zero 2 W
 
+> [!TIP]
+> **Building one?** The full shopping list, pin plan and `config.txt` setup are in [docs/hardware.md](docs/hardware.md).
+
 | Part | Notes |
 | --- | --- |
 | **Raspberry Pi Zero 2 W** | Needs 64-bit Raspberry Pi OS. Small and cool enough for a slim shell. |
