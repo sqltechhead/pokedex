@@ -6,81 +6,97 @@ gotchas, and where things stand. The README covers usage.
 
 ## The device
 
-- **Target: Raspberry Pi Zero 2 W** (512 MB RAM, slim shell, cheap). The user
-  decided to wait for Zero stock rather than test on a Pi 5 first; the code
-  still runs on a Pi 5 (same camera connector), which the README notes.
-- Screen designed at **480×320**, scales to any size.
-- Buttons are read as **keyboard keys** (GPIO via the `gpio-key` overlay):
-  D-pad, A (Enter/Space/Z), B (Esc/Backspace/X), SELECT (Tab/S),
-  START (F1/C, keycode 59). Touch works too.
-- Camera Module 3 on a 22-pin Pi 5/Zero cable. No audio jack on either
-  board: I2S amp (e.g. MAX98357A) or USB audio.
-- Parts list, GPIO pin plan and config.txt: `docs/hardware.md` (planned, not yet
-  built). The Zero has no DSI port, so the screen is a 480×320 SPI LCD.
-- **Everything heavy runs on the PC** (fetch, narration, recognition
-  references); the device only reads files. Must work fully offline.
+- **Target: Raspberry Pi Pico 2** (RP2350, 520 KB RAM, no OS) running
+  **CircuitPython**. Switched from the Pi Zero 2 W on 2026-10-21; the Zero
+  version (pygame UI, camera scanner) is in git history before that.
+- **No scanner/camera**: the Pico can't run recognition. Dropped deliberately.
+- **Docs follow the plan:** `docs/hardware.md` mirrors its hardware
+  sections; README and this file must agree with it. When code changes
+  something the plan describes (buttons, card layout, pins), update the
+  plan's page *and* its `plan.md` too (Artifact tool, publish with `url`).
+- **Hardware source of truth: the "Pokédex Handheld Plan" artifact**
+  (https://claude.ai/artifact/UjDWTx9Sn6SvYG6ow1UfMZ; read it and its files
+  with the Artifact tool). Parts were bought 2026-11-03 for two builds (for
+  Marshall, a child: keep it safe and simple).
+- Screen: **Waveshare 3.5" (G), ST7796S, 480×320, 16-bit SPI**, via the plan's
+  `firmware/st7796s.py`. XPT2046 touch shares the bus; TP_CS (GP26) is held
+  high and touch is unused until calibrated on the real screen.
+- 10 buttons via `keypad.Keys` in `pins.BUTTON_NAMES` order: D-pad, A, B,
+  START (menu from anywhere), SELECT (replay entry / search results), L/R
+  (type filter in the list, ±10 on an entry).
+- Audio: MAX98357A over I2S, two speakers in parallel; WAV through `audiomixer`.
+- Battery: divider on GP28, read every 30 s, icon top-right of every header
+  (yellow below 3.45 V). Header text ends at `HEADER_RIGHT` to leave room.
+- microSD on its own SPI bus, mounted at `/sd`; settings saved there.
+- **Pins: `firmware/pins.py`**, plus `st7796s.py` and `hw_test.py`, copied
+  verbatim from the plan (only numeric underscores removed and `AUDIO_RATE`
+  set to 22050). Ruff excludes them. Keep them in sync with the plan.
+- **Everything heavy runs on the PC**; the Pico only reads the card.
 
 ## Layout and commands
 
-- `src/pokedex/`: `models.py` (Pydantic `Pokemon`, `EvolutionChain`),
-  `db.py` (SQLite via plain `sqlite3`, explicit schema + `MIGRATIONS` dict),
-  `paths.py` (`DataPaths`), `search.py`, `units.py`, `camera.py`.
-- `fetcher/` → `pokedex-fetch`; `narrator/` → `pokedex-narrate`;
-  `recognizer/` → `pokedex-embed` and the scanner; `ui/` → `pokedex`.
-- `ui/state.py` is **pure navigation state (no pygame)**; `render.py` draws;
-  `app.py` is the event loop. Keep that split: state is unit-tested headless.
-- Optional extras: `narrate` (Piper, numpy, scipy, soundfile) and
-  `recognize` (onnxruntime, numpy, scipy, pillow, tokenizers). Use
-  `uv run --all-extras ...` in development so extras aren't dropped.
-- Tests: `uv run --all-extras pytest` (offline, SDL dummy drivers).
-  Lint: `uv run ruff check . && uv run ruff format .` (Markdown excluded).
-- `data/` (~1.6 GB) is git-ignored; README "Get the data" rebuilds it.
-- `scripts/readme_images.py` regenerates `docs/images/`;
-  `scripts/demo_video.py` records `docs/media/pokedex-demo.mp4` with sound.
+- `src/pokedex/` (PC, CPython via uv): `models.py`, `db.py` (SQLite,
+  `MIGRATIONS` dict), `paths.py`, `fetcher/` → `pokedex-fetch`, `narrator/` →
+  `pokedex-narrate`, `sdcard/` → `pokedex-sdcard` (builds `build/sd/pokedex/`:
+  `index.tsv`, `mon/NNNN.json`, `art|spr|ev72|ev44|ev26/NNNN.bmp`, `cry|say/NNNN.wav`,
+  `fonts/*.bdf`).
+- `firmware/` (copied to CIRCUITPY): `code.py` → `lib/dex/app.py`. Pure,
+  PC-tested modules: `state`, `index`, `records`, `search`, `keyboard`,
+  `evolution`, `settings`, `units`, `timing`, `theme`. Hardware-only:
+  `hardware`, `screens`, `audio`, `app` (untestable on the PC).
+- **Simulator:** `uv run --group sim python sim/pokedex_sim.py` runs the real
+  firmware on Blinka displayio in a pygame window (keyboard = buttons, swaps
+  in fake `dex.hardware`/`dex.audio` via sys.modules, `build/sd` = card).
+  `--shots DIR` runs `TOUR` and saves PNGs; use it to check screen changes.
+  blinka-displayio-pygamedisplay 4.1.0 imports an unpublished
+  `keypad_pygame`, hence the stub `sim/keypad_pygame.py`.
+- Tests: `uv run --all-extras pytest` (pytest `pythonpath` adds
+  `firmware/lib`). Lint: `uv run ruff check . && uv run ruff format .`.
+- `data/` (~1.6 GB incl. old models) and `build/` are git-ignored.
 
 ## Decisions and gotchas
 
-- **Dev Mac is Intel, macOS 12.** onnxruntime is pinned `<1.20` for
-  darwin/x86_64 only (newer wheels need macOS 13 / arm64). PyTorch and
-  OpenCV have no usable builds there, so neither is used: CLIP and OCR run
-  on ONNX Runtime with numpy/scipy/Pillow; webcams are read through ffmpeg
-  (`imageio-ffmpeg` dev dependency).
-- **Pi camera via `rpicam-vid` subprocess (MJPEG), not picamera2**, because
-  picamera2 only installs into the system Python, not uv's.
-- **Scanner:** card names first (PaddleOCR v3 English det/rec ONNX models,
-  own pre/post-processing, fuzzy name match preferring tall text), then
-  CLIP picture matching (blend 40% text prompts / 60% artwork). Default
-  model `clip-vit-base-patch32` **quantized** for the Zero; `patch16` is
-  more accurate (Pi 5 only). Plush confidences across 1,025 Pokémon are low
-  (5-25%), so plushies usually get the "Is it…?" top-3 chooser; cards open
-  directly. Auto-open threshold = Settings → Scanner sensitivity.
-- **Audio:** cry then narration on one reserved mixer channel; narration is
-  started from the channel's end event, never `Channel.queue` (stopping a
-  channel triggers its queue, which caused overlapping audio).
-- **Narration:** Piper `en_US-ryan-high` (non-commercial licence) with a
-  light "device" effect. "Pokémon" is respelled "Pokemon" and "Poké" as
-  "Pokeh" in `narrator/script.py` `PRONUNCIATIONS` (espeak otherwise says
-  "PAH-kay-mun"). Don't imitate real voice actors (e.g. Dexter's).
-- Cries from PokéAPI are named `.ogg` but some are MP3 inside; pygame and
-  ffmpeg detect by content, so leave them.
-- The event loop only redraws on input (battery); the scanner screen
-  redraws at ~15 fps and screen sleep adds a timeout. Shut down/restart
-  refuse to run off a Raspberry Pi (`ui/power.py`).
+- **Firmware Python subset:** no `match`, dataclasses, enum, typing,
+  annotations, walrus, `str.isalnum/capitalize/title`, numeric underscores,
+  `zip(strict=)`. `tests/firmware/test_fw_compat.py` enforces most of it;
+  ruff ignores B905 under `firmware/**`. f-strings are fine.
+- **Floats are single precision on the Pico**: units use integer maths.
+- **Search keys are made on the PC** (`sdcard/entries.search_key`, NFKD)
+  because CircuitPython has no unicodedata.
+- **Index in RAM** stores types as a bytearray of codes (`dex.index`), list
+  state works on index positions, entries are read from SD on demand.
+- **Fonts:** BDFs generated from DejaVu with Pillow (`sdcard/fonts.py`);
+  charset = all data text + every char in `firmware/**/*.py`, so new UI
+  symbols are covered after re-running `pokedex-sdcard`. Space glyph is 1×1.
+- **BMPs:** 8-bit palette, index 0 transparent; soft edges pre-blended onto
+  `theme.PANEL`. Pillow's `point()` on a P image maps the palette, not the
+  indices: use `Image.frombytes("L", ...)` to get indices.
+- **WAVs:** ffmpeg decodes to raw s16le, stdlib `wave` writes a plain 44-byte
+  header (no LIST chunk). 22050 Hz mono; must match `dex.audio.SAMPLE_RATE`.
+- Narration: Piper `en_US-ryan-high` (non-commercial) with a device effect;
+  "Pokémon" respelled in `narrator/script.py` `PRONUNCIATIONS`. Don't imitate
+  real voice actors. Dev Mac is Intel macOS 12: onnxruntime pinned `<1.20`.
+- **Labels use `background_tight=True`**: bitmap_label's default box is the
+  font's full ascent (É, ♀), which draws plain text ~6 px low. Found in the
+  simulator. Hidden vectorio shapes go to x = -1000 (`OFFSCREEN`), not -100,
+  or wide ones poke back on screen.
+- Cry plays then narration starts from `EntryAudio.poll()`; START on an entry
+  replays. Screens only resend changed areas (`set_text`/`set_color` guards).
 
-## Status (2026-10-19)
+## Status (2026-11-03)
 
-- Done: fetch of all 1,025 Pokémon (cries, evolution chains, narration,
-  scanner references), UI (home, list, entry, evolution, search with
-  on-screen keyboard, scanner, settings incl. units, screen sleep, safe
-  shut down), README, tests (162 passing).
-- GitHub: `sqltechhead/pokedex`, branch `main`. A stray `master` branch
-  (GitHub's README-only first commit) is waiting for the default branch to
-  be switched to `main` on GitHub, then `git push origin --delete master`.
-- Not yet verified on real hardware: everything Pi-specific (rpicam-vid,
-  GPIO keys, kmsdrm, backlight, sudo shutdown, scan speed on the Zero).
-  A benchmark on the Pi is planned.
-- `data/recognition/clip-vit-base-patch16.npz` only covers Gen 1; rebuild
-  with `pokedex-embed --model clip-vit-base-patch16` before using it.
-- Next ideas: caught tracking (scans mark Pokémon caught, counter on home),
-  themes, shiny mode, read-aloud on request, About screen, brightness,
-  voice search (I2S mic + Vosk/Whisper, matched by sound).
+- Done: Pico rewrite (firmware + `pokedex-sdcard`), firmware aligned to the
+  plan's parts and pins (ST7796S, 10 buttons, battery icon), 137 tests
+  passing, real card built from all 1,025 (~480 MB, ~2.5 min).
+- Simulator verified every screen (home, list, filter, entry, evolution incl.
+  Eevee and Oddish, search, settings, low battery).
+- **Never run on a Pico yet.** Unverified: ST7796S init/MADCTL/inversion, SPI
+  speeds, RAM headroom, WAV streaming from SD, font load speed,
+  CircuitPython-on-RP2350 module availability. First step: `import hw_test`.
+- Plan artifact updated 2026-11-03 (version 4): sections 1, 6, 7, 8 and 13
+  now describe the code as built (buttons, card layout, `pokedex-sdcard`),
+  and its `pins.py` matches the repo's.
+- No README screenshots (the old pygame ones were removed).
+- GitHub `sqltechhead/pokedex`, branch `main`; stray `master` branch still
+  to delete once the default branch is `main`.
+- Next ideas: caught tracking, battery level, themes, shiny mode.

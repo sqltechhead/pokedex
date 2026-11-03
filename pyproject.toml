@@ -1,21 +1,20 @@
 [project]
 name = "pokedex"
 version = "0.1.0"
-description = "Offline Pokédex: mirrors PokéAPI into a local SQLite database and sprite folders."
+description = "Offline Pokédex for a Raspberry Pi Pico 2: PC tools that build its microSD card, plus the CircuitPython firmware."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "imageio-ffmpeg>=0.6.0",
     "pillow>=13.0.0",
     "pydantic>=2.14.1",
-    "pygame-ce>=2.5.8",
     "requests>=2.34.2",
 ]
 
 [project.scripts]
-pokedex = "pokedex.ui.app:main"
 pokedex-fetch = "pokedex.fetcher.cli:main"
 pokedex-narrate = "pokedex.narrator.cli:main"
-pokedex-embed = "pokedex.recognizer.cli:main"
+pokedex-sdcard = "pokedex.sdcard.cli:main"
 
 [project.optional-dependencies]
 narrate = [
@@ -25,14 +24,6 @@ narrate = [
     "scipy>=1.17.1",
     "soundfile>=0.14.0",
 ]
-recognize = [
-    "numpy>=2.4.6",
-    "onnxruntime>=1.19.2",
-    "onnxruntime<1.20 ; platform_machine == 'x86_64' and sys_platform == 'darwin'",
-    "pillow>=13.0.0",
-    "tokenizers>=0.23.3",
-    "scipy>=1.17.1",
-]
 
 [build-system]
 requires = ["uv_build>=0.13.1,<0.14"]
@@ -40,19 +31,36 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "imageio-ffmpeg>=0.6.0",
     "pytest>=9.1.1",
     "ruff>=0.17.1",
+]
+# Runs the firmware on the PC in a window (sim/): uv run --group sim python sim/pokedex_sim.py
+sim = [
+    "adafruit-blinka-displayio",
+    "adafruit-circuitpython-bitmap-font",
+    "adafruit-circuitpython-display-text",
+    "blinka-displayio-pygamedisplay",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The firmware's pure-logic modules (firmware/lib/dex) are tested on the PC.
+pythonpath = ["firmware/lib"]
 
 [tool.ruff]
 line-length = 100
+# Kept exactly as in the Pokédex Handheld Plan artifact, the hardware's source of truth.
+extend-exclude = ["firmware/pins.py", "firmware/st7796s.py", "firmware/hw_test.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.ruff.format]
 exclude = ["*.md"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["dex", "pokedex"]
+
+[tool.ruff.lint.per-file-ignores]
+# CircuitPython's zip() has no strict= argument.
+"firmware/**" = ["B905"]
