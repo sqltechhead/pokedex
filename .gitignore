@@ -1,7 +1,6 @@
-# Everything the commands download or generate (about 1.6 GB with all models):
-# the database, sprites, artwork, cries, narration, voices, CLIP and OCR
-# models, scanner references, scans and device settings. Rebuild it with the
-# steps in the README's "Get the data" section.
+# Everything the commands download or generate: the database, sprites,
+# artwork, cries, narration and voices. Rebuild it with the steps in the
+# README's "Get the data" section. build/ (below) holds the SD card image.
 data/
 
 # Python and tooling

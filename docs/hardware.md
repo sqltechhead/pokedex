@@ -1,151 +1,133 @@
-# Hardware: shopping list and wiring
+# Hardware
 
-Everything needed to build the handheld Pokédex around a **Raspberry Pi Zero 2 W**.
-
-> [!WARNING]
-> **Not yet built.** This plan follows the software's needs and the boards' documentation, but none of it has been assembled or tested on real hardware yet. Check each part's own documentation, especially the screen's, before ordering, and expect to adjust.
-
-## Shopping list
-
-Everything is from **[The Pi Hut](https://thepihut.com)** (UK). Prices include VAT and were checked on **19 October 2026**. Prices and stock change often, and a few items were showing as sold out, so check each page before ordering. Delivery isn't included.
-
-### 1. The handheld
-
-| Part | Product | Price | Notes |
-| --- | --- | ---: | --- |
-| Computer | [Raspberry Pi Zero 2 W](https://thepihut.com/products/raspberry-pi-zero-2) | £14.40 | Choose the **pre-soldered header** option, which may cost a little more. Not the older "Zero WH" |
-| Storage | [Raspberry Pi microSD card, OS pre-installed](https://thepihut.com/products/noobs-preinstalled-sd-card) | ~£10 * | Pick **32 GB**, then reflash it with Raspberry Pi OS **Lite** (64-bit) |
-| Screen | [Waveshare 3.5" Resistive Touch Display (G)](https://thepihut.com/products/3-5-resistive-touch-display-g-for-raspberry-pi-320x480) | £15.40 | 480×320 IPS panel, ST7796S chip, XPT2046 touch, backlight pin. **Connect it with its 11-wire cable, not the pogo pins** (see below). Easier-to-set-up alternative: [Adafruit 3.5" HXD8357D breakout](https://thepihut.com/products/adafruit-3-5-tft-320x480-touchscreen-breakout-board-w-microsd-socket), £38.40 |
-| Camera | [Raspberry Pi Camera Module 3](https://thepihut.com/products/raspberry-pi-camera-module-3) | £24.00 | Standard lens, not NoIR |
-| Camera cable | [Pi Zero "Stub" Camera Cable, 38 mm](https://thepihut.com/products/raspberry-pi-zero-stub-camera-cable-38mm) | £2.50 | For a camera mounted right next to the Pi |
-| Amplifier | [Adafruit I2S 3W Amplifier, MAX98357A](https://thepihut.com/products/adafruit-i2s-3w-class-d-amplifier-breakout-max98357a) | £5.70 | If sold out: [MAX98357 I2S Amplifier Module](https://thepihut.com/products/max98357-i2s-amplifier-module) |
-| Speaker | [1" Mini Metal Speaker, 8 Ω 0.5 W](https://thepihut.com/products/mini-metal-speaker-w-wires-8-ohm-0-5w) | £2.00 | 28 mm, 6 g. See the volume warning below |
-| Buttons | [Soft Silicone Top 6 mm Push-buttons, 20-pack](https://thepihut.com/products/soft-silicone-top-6mm-push-buttons-20-pack) | £2.50 | 8 needed. Or the plain [6 mm 20-pack](https://thepihut.com/products/tactile-button-switch-6mm-x-20-pack) (£2.20) when in stock |
-| Charger and booster | [PowerBoost 1000C](https://thepihut.com/products/adafruit-powerboost-1000-charger-rechargeable-5v-lipo-usb-boost-1a) | £19.20 | Charges over micro-USB while running. Was sold out when checked |
-| Battery | [2000mAh 3.7V LiPo, JST-PH](https://thepihut.com/products/2000mah-3-7v-lipo-battery) | £10.00 | 60 × 38 × 8 mm, built-in protection. Check polarity against the PowerBoost |
-| Power switch | [Breadboard-friendly SPDT Slide Switch](https://thepihut.com/products/breadboard-friendly-spdt-slide-switch) | £0.80 | |
-| | | **£106.50** | |
-
-\* Estimated: the listing's £30.60 appears to be for a larger card. Check the 32 GB price on the page.
-
-### 2. Building
-
-| Part | Product | Price | Notes |
-| --- | --- | ---: | --- |
-| Wire | 30 AWG silicone, 2 m each: [black](https://thepihut.com/products/silicone-cover-stranded-core-wire-2m-30awg-black), [red](https://thepihut.com/products/silicone-cover-stranded-core-wire-2m-30awg-red), [white](https://thepihut.com/products/silicone-cover-stranded-core-wire-2m-30awg-white), [yellow](https://thepihut.com/products/silicone-cover-stranded-core-wire-2m-30awg-yellow) | £3.20 | £0.80 each |
-| Shell inserts | [Brass Heat-Set Inserts, M3 × 4 mm, 50-pack](https://thepihut.com/products/brass-heat-set-inserts-for-plastic-m3-x-4mm-50-pack) | £5.90 | Design the shell's screw points for M3 |
-| Insert tool | [Heat-set insert tip for soldering irons, M3](https://thepihut.com/products/heat-set-insert-for-soldering-irons-4-40-m3-inserts) | £10.80 | Fits Hakko-style irons. Optional, but makes inserts go in straight |
-| Mounting the Pi | [White Nylon Screw and Stand-off Set, M2.5](https://thepihut.com/products/white-nylon-screw-and-stand-off-set-m2-5-thread) | £13.00 | 420 pieces; the Pi's holes are M2.5 |
-| Heat-shrink | [Wire and heat-shrink range](https://thepihut.com/collections/prototyping-wire-heat-shrink) | — | Any small assortment |
-| | | **£32.90** | |
-
-Also needed, if you don't already have them: a soldering iron and solder, flush cutters, a multimeter, and access to a 3D printer.
-
-### 3. Setting up and prototyping
-
-| Part | Product | Price | Notes |
-| --- | --- | ---: | --- |
-| Screen for setup | [Mini-HDMI to HDMI adapter cable](https://thepihut.com/products/official-raspberry-pi-mini-hdmi-male-to-hdmi-female-adapter-cable) | £2.30 | Plug the Zero into a monitor for first setup. A micro-USB OTG adapter (for a keyboard) is in the [adapters range](https://thepihut.com/collections/raspberry-pi-cable-adapters-accessories); or set it up over SSH instead |
-| Breadboard | [Half Size Breadboard + 78 Jumper Wires](https://thepihut.com/products/adafruit-half-size-breadboard-78-piece-22awg-jumper-wire-bundle) | £9.60 | Try the screen, buttons and amplifier before soldering |
-| Jumper wires | [Female/Male jumper wires, 20 × 6"](https://thepihut.com/products/premium-female-male-extension-jumper-wires-20-x-6) | £1.70 | From the Pi's header to the breadboard |
-| | | **£13.60** | |
-
-### Total
-
-| | Price |
-| --- | ---: |
-| 1. The handheld | £106.50 |
-| 2. Building | £32.90 |
-| 3. Setting up and prototyping | £13.60 |
-| **Everything** | **£153.00** |
-
-Skipping the optional insert tip brings it to **£142.20**. Choosing the Adafruit screen instead adds £23. Add delivery, heat-shrink and an OTG adapter on top.
-
-### Optional extras (not in the totals)
-
-| Part | Why |
-| --- | --- |
-| White LED and resistor | Lights the subject for scanning in dim rooms (needs a small code addition) |
-| MAX17048 LiPo fuel gauge (I2C) | A battery level on screen (needs code) |
-| INMP441 I2S microphone | For voice search later. Shares the audio pins with the amplifier |
-
-### Before you plug anything in
+> [!IMPORTANT]
+> **The [Pokédex Handheld Plan](https://claude.ai/artifact/UjDWTx9Sn6SvYG6ow1UfMZ) is the source of truth.** This page mirrors its hardware sections. If they ever disagree, the plan wins: update this page (and `firmware/pins.py`) to match. The plan also holds the wiring diagram and the 3D-printed case model, which aren't copied here.
 
 > [!WARNING]
-> **Speaker volume:** the amplifier can deliver nearly 2 W into this 0.5 W speaker and could blow it at full volume. Wire the amplifier's GAIN pin for its lowest gain (see Adafruit's guide), or keep **Volume** below about 50% until you've tested it.
+> **Not yet run on real hardware.** Run `hw_test.py` first (see [Build order](#build-order)) and expect to adjust the screen settings.
 
-> [!WARNING]
-> **Battery polarity:** check that the battery's red wire lines up with the **+** marking on the PowerBoost before connecting. A reversed plug can destroy the board.
+## Decisions
 
-## Pin plan
-
-One layout where everything fits together on the 40-pin header (BCM GPIO numbers).
-
-| Function | GPIO | Header pin |
+| Decision | Choice | Why |
 | --- | --- | --- |
-| Screen SPI MOSI | 10 | 19 |
-| Screen SPI clock | 11 | 23 |
-| Screen chip select (CE0) | 8 | 24 |
-| Screen SPI MISO (touch only) | 9 | 21 |
-| Screen data/command (DC) | 24 | 18 |
-| Screen reset | 25 | 22 |
-| Screen backlight | 12 | 32 |
-| Touch chip select (CE1, optional) | 7 | 26 |
-| Touch interrupt (optional) | 17 | 11 |
-| I2S bit clock (amp, mic) | 18 | 12 |
-| I2S word select (amp, mic) | 19 | 35 |
-| I2S data out (to amp) | 21 | 40 |
-| I2S data in (from mic, optional) | 20 | 38 |
-| Button **Up** | 5 | 29 |
-| Button **Down** | 6 | 31 |
-| Button **Left** | 13 | 33 |
-| Button **Right** | 26 | 37 |
-| Button **A** | 16 | 36 |
-| Button **B** | 23 | 16 |
-| Button **SELECT** | 22 | 15 |
-| Button **START** | 27 | 13 |
-| Fuel gauge SDA / SCL (optional) | 2 / 3 | 3 / 5 |
-| Scanner LED (optional) | 4 | 7 |
-| *Left free: serial console* | 14 / 15 | 8 / 10 |
+| Board | Raspberry Pi Pico 2 (RP2350, 520 KB RAM) | Cheap, in stock, boots instantly, long battery life |
+| Language | CircuitPython 9 or later | Built-in displayio, keypad, SD and WAV playback keep the hardware code short |
+| Screen | Waveshare 3.5" Resistive Touch Display (G): ST7796S + XPT2046, 480 × 320 | Thin enough for a 15 mm middle; 16-bit colour over SPI, so redraws are quick |
+| Camera | Dropped | The Pico can't do image recognition usefully |
+| Shape | Landscape, two-handed, with rounded grips | Easy for a child to hold; the screen is landscape anyway |
+| Storage | microSD breakout on its own SPI bus | The (G) screen has no SD line on its cable |
+| Sound | One MAX98357A amp, two 15 × 11 mm 8 Ω speakers in parallel | The sounds are mono, so one amp is enough |
+| Case artwork | An original design | No official Pokémon or Pokédex designs on the case |
 
-Power: the booster's 5 V output goes to header pin 2 (5 V) and its ground to pin 6. The screen and amplifier take 3.3 V or 5 V as their boards specify. Each button goes between its GPIO and any ground pin; the Pi's internal pull-ups do the rest.
+## Parts
 
-## Configuration
+Bought, with enough for **two builds**. "Per build" is what one handheld uses.
 
-Add to `/boot/firmware/config.txt` on the Pi:
+| Part | Per build | Size / notes |
+| --- | --- | --- |
+| Raspberry Pi Pico 2, **without headers** | 1 | 51 × 21 mm, flat, goes in the case. A Pico 2 **with headers** is for breadboard testing only |
+| Waveshare 3.5" Resistive Touch Display (G), ST7796S + XPT2046, 11-pin GH1.25 cable | 1 | 85 × 56 mm board (assumed until measured) |
+| Adafruit I2S 3W amp, MAX98357A | 1 | 19 × 18 × 2.6 mm |
+| Adafruit microSD breakout, 3 V | 1 | 25.4 × 22.8 × 3.5 mm |
+| 100 kΩ resistors | 2 | Battery-level divider |
+| EEMB 3.7 V 1100 mAh 603449 LiPo, protection circuit, JST-PH 2.0 plug | 1 | About 6 × 34 × 49 mm |
+| DollaTek Type-C USB 5 V 2 A boost charger (1S) | 1 | **Clip off the USB-A socket**; take 5 V from the 5V +/− pads |
+| sourcing map 1 W 8 Ω speaker | 2 | 15 × 11 × 3.7 mm, **rectangular** |
+| Gikfun tactile switches, 6 × 6 × 4.3 mm, through-hole | 10 | D-pad ×4, A, B, START, SELECT, L, R |
+| SS12D00G3 slide switch | 1 | Power. Body 8.6 × 3.5 × 3.6 mm |
+| 1N5819 Schottky diode | 1 | 5 V rail → Pico VSYS |
+| JST-PH 2.0 2-pin plug/socket lead | 1 pair | Battery into the charger |
+| Self-tapping screws, M2 / M2.5 pan head | 6 × M2.5×10, 8 × M2×5, 4 × M2×4 | |
+| 1 mm double-sided foam tape | | Holds the battery, charger, amp and SD board |
+| Heat-shrink, 22 AWG silicone wire, a multimeter | | |
+| microSD card | 1 | 1 GB or more, **FAT32** (the full card is about 480 MB) |
 
-```ini
-# Buttons as keys (see the README's controls table)
-dtoverlay=gpio-key,gpio=5,active_low=1,gpio_pull=up,keycode=103,label=up
-dtoverlay=gpio-key,gpio=6,active_low=1,gpio_pull=up,keycode=108,label=down
-dtoverlay=gpio-key,gpio=13,active_low=1,gpio_pull=up,keycode=105,label=left
-dtoverlay=gpio-key,gpio=26,active_low=1,gpio_pull=up,keycode=106,label=right
-dtoverlay=gpio-key,gpio=16,active_low=1,gpio_pull=up,keycode=28,label=a
-dtoverlay=gpio-key,gpio=23,active_low=1,gpio_pull=up,keycode=1,label=b
-dtoverlay=gpio-key,gpio=22,active_low=1,gpio_pull=up,keycode=15,label=select
-dtoverlay=gpio-key,gpio=27,active_low=1,gpio_pull=up,keycode=59,label=start
+**Wire colours:** black = GND, red = 5 V and battery +, yellow = D-pad, green = A/B/START/SELECT/L/R, blue = amp signals, white = SD and battery sense.
 
-# Sound through the MAX98357A
-dtparam=audio=off
-dtoverlay=max98357a
+**Battery life estimate:** about 5–6 hours (Pico 2 about 25 mA, plus the backlight about 80 mA at 5 V through the boost).
 
-# Screen: SPI on, then the overlay for your screen's controller
-dtparam=spi=on
-```
+## Pins
 
-**The screen needs its own overlay.** Use the kernel's DRM drivers rather than the older `fbtft` ones, so pygame can draw with `SDL_VIDEODRIVER=kmsdrm` as the README describes.
+[`firmware/pins.py`](../firmware/pins.py) is the plan's pin map, and the firmware reads every pin from it. Pico 2 seen from the top, USB at the top.
 
-- **Waveshare (G), ST7796S:** use the generic `mipi-dbi-spi` overlay with an init file of the ST7796S's startup commands, with its DC, reset and backlight pins set to the pin plan (24, 25 and 12), and rotated to landscape (the panel is portrait, 320×480). Touch uses the `ads7846` overlay on CE1 with its interrupt on GPIO 17. Waveshare's own guide covers their older driver, so this step is the one to test first.
-- **Adafruit HXD8357D:** the kernel has a driver made for this chip, which makes setup simpler.
+| Function | GPIO | Pico pin | Other end |
+| --- | --- | --- | --- |
+| Amp BCLK | GP0 | 1 | MAX98357A BCLK |
+| Amp LRC | GP1 | 2 | MAX98357A LRC (must be BCLK + 1) |
+| Amp DIN | GP2 | 4 | MAX98357A DIN |
+| Up | GP3 | 5 | switch → GND |
+| Down | GP4 | 6 | switch → GND |
+| Left | GP5 | 7 | switch → GND |
+| Right | GP6 | 9 | switch → GND |
+| A | GP7 | 10 | switch → GND |
+| B | GP8 | 11 | switch → GND |
+| START | GP9 | 12 | switch → GND |
+| SD SCK | GP10 | 14 | SD breakout CLK |
+| SD MOSI | GP11 | 15 | SD breakout DI |
+| SD MISO | GP12 | 16 | SD breakout DO |
+| SD CS | GP13 | 17 | SD breakout CS |
+| SELECT | GP14 | 19 | switch → GND |
+| L shoulder | GP15 | 20 | switch → GND |
+| Screen MISO | GP16 | 21 | cable pin 9 |
+| Screen CS | GP17 | 22 | cable pin 6 LCD_CS |
+| Screen SCLK | GP18 | 24 | cable pin 7 |
+| Screen MOSI | GP19 | 25 | cable pin 8 |
+| Screen DC | GP20 | 26 | cable pin 5 LCD_DC |
+| Screen RST | GP21 | 27 | cable pin 4 LCD_RST |
+| Screen backlight | GP22 | 29 | cable pin 3 LCD_BL |
+| Touch CS | GP26 | 31 | cable pin 2 TP_CS (held high: touch isn't used yet) |
+| R shoulder | GP27 | 32 | switch → GND |
+| Battery level | GP28 | 34 | middle of the 100 k / 100 k divider |
+| 3.3 V out | 3V3 | 36 | SD breakout 3V |
+| 5 V in | VSYS | 39 | from the 5 V rail through the Schottky diode (stripe towards the Pico) |
+| GND | GND | 3, 8, 13, 18, 23, 28, 33, 38 | common ground |
 
-#### Wiring the Waveshare (G)
+Not connected: VBUS (40), 3V3_EN (37), ADC_VREF (35), RUN (30), screen TP_IRQ (cable pin 1).
 
-It can connect two ways. **Use the 11-wire GH1.25 cable**, wired to the pin plan above. Its pogo-pin option presses onto the Pi's header with fixed pins, and puts the backlight on GPIO 18, which the audio amplifier needs.
+## Wiring
 
-## Things to check when building
+**Power**
 
-- **Screen speed:** SPI screens refresh more slowly than HDMI. Menus and entries only redraw on a button press, so that's fine; the scanner's live preview runs at about 15 frames a second, which should be within reach.
-- **Power draw:** the Zero 2 W with screen, camera and amplifier can peak near 1 A while scanning. Check the booster's rating, and watch for the Pi's low-voltage warning.
-- **Heat:** sustained scanning makes the Zero throttle in a closed shell. A few vent slots near the processor help.
-- **Camera orientation:** if it ends up upside down, turn on **Settings → Camera upside down** rather than reprinting the shell.
-- **Shut down before switching off:** use **Settings → Shut down**, wait for the green activity LED to stop, then flip the power switch.
+- Battery (JST-PH plug) → JST-PH socket lead → charger B+ / B−. Check the polarity with the multimeter first.
+- Charger 5 V OUT+ → slide switch → **5 V rail**. Charger OUT− → common GND.
+- 5 V rail → screen cable pin 11 (VCC), amp VIN, and through the Schottky diode to Pico VSYS (pin 39). The diode stops the Pico's USB feeding back into the boost board when you plug in to program it.
+- Battery level: battery + (directly, before the switch) → 100 kΩ → GP28 → 100 kΩ → GND. GP28 reads half the battery voltage (at most 2.1 V).
+
+**Screen (11-way GH1.25 cable):** pins 2–9 as in the pin map, 10 → GND, 11 → 5 V, pin 1 (TP_IRQ) unused. The touch controller shares SCLK/MOSI/MISO with the display.
+
+**microSD breakout:** SCK/MOSI/MISO/CS to GP10–13, 3V to Pico pin 36, GND to GND.
+
+**Amp:** BCLK/LRC/DIN to GP0/1/2, VIN to 5 V, GND to GND. GAIN and SD unconnected (9 dB, stereo mix). Both speakers in parallel on the amp's + and − (4 Ω total).
+
+**Buttons:** each switch between its GPIO and GND; the firmware turns on the internal pull-ups.
+
+**Ground:** all GNDs join together (charger OUT−, every Pico GND pin used, screen pin 10, amp, SD breakout, every button).
+
+## Case
+
+An original two-handed design, 176 × 78 mm, 15 mm thick in the middle and 26 mm at the grips, printed in PLA or PETG (about 55 g). The model, print settings and the measurements to check before printing are in the plan.
+
+## Build order
+
+1. Check the charger: battery in, measure 5 V on its output.
+2. Flash CircuitPython onto the Pico 2 (README, "Set up the Pico 2").
+3. Wire everything on the bench (not in the case). Copy `firmware/pins.py`, `firmware/st7796s.py` and `firmware/hw_test.py` to CIRCUITPY and run `import hw_test` from the serial console: it checks the buttons, screen, touch, microSD, audio and battery in turn.
+4. Copy the app and the SD card (README) and run it on the bench.
+5. Print the fit-test plate, then the full plate.
+6. Assemble: face plate → switch plates and caps → shoulder caps and switches → slide switch → speakers → battery, SD and amp → charger → Pico → screen on its pillars → close with 6 screws.
+
+## Safety (it's for a child)
+
+- Protected LiPo (with a protection circuit) and a charger with protection; don't leave it charging unattended.
+- Clip the charger's USB-A socket with nothing connected, and check 5V+ to − doesn't beep on continuity before first use.
+- The case is screwed shut, so the battery can't be reached without a screwdriver.
+- No magnets or loose small parts on the outside. Sand sharp print edges.
+- If the charger cuts out when the load is very light, that's its auto power-off; with the backlight on it shouldn't trigger.
+- **Speaker volume:** two 8 Ω speakers in parallel make 4 Ω, so the amp delivers more power. Start with **Volume** low.
+
+## Things to check on first power-up
+
+- **Screen orientation and colours** are set in `st7796s.py`: `_MADCTL = 0x28` (try `0x68`, `0xE8` or `0xA8` if the picture is mirrored or upside down) and inversion `0x21` (use `0x20` if colours look like a negative).
+- **Touch** needs `hw_test.py`'s raw corner values before the app can use it.
+- **Battery icon:** compare the header's level with the multimeter and `hw_test.py`'s reading. It turns yellow below 3.45 V (`pins.BATT_LOW_V`).
+- **Card speed:** if sound stutters, try another microSD card, or lower `SD_BAUD` in `pins.py`.
