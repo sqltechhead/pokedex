@@ -1,7 +1,8 @@
 """Command line entry point: ``uv run pokedex-fetch``.
 
-Fetches Pokémon, then fills in cries and evolution chains for every
-Pokémon in the database.
+Fetches Pokémon, then fills in cries, evolution chains, regions, abilities,
+level-up moves, shiny artwork, colours, shapes and the other browse
+categories, and the type chart, for every Pokémon in the database.
 
     pokedex-fetch                  # Gen 1 (1-151)
     pokedex-fetch --last 1025      # every Pokémon
@@ -26,7 +27,16 @@ from pydantic import ValidationError
 from pokedex.db import PokedexDB
 from pokedex.fetcher.api import PokeAPIClient
 from pokedex.fetcher.evolution import build_chain
-from pokedex.fetcher.fetch import DEFAULT_VERSIONS, download_cry, fetch_pokemon
+from pokedex.fetcher.fetch import (
+    DEFAULT_VERSIONS,
+    TYPES,
+    details,
+    download_cry,
+    download_shiny,
+    fetch_pokemon,
+    species_details,
+)
+from pokedex.models import Ability, Move
 from pokedex.paths import DEFAULT_DATA_DIR, DataPaths
 
 FETCH_ERRORS = (requests.RequestException, ValidationError)
@@ -84,6 +94,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.cries:
             failures += fetch_cries(db, client, paths, args)
         failures += fetch_evolutions(db, client, args)
+        failures += fetch_details(db, client, paths, args)
+        failures += fetch_species_details(db, client, args)
+        failures += fetch_moves_and_abilities(db, client, args)
+        failures += fetch_type_chart(db, client, args)
         print(f"\nDone. {db.count()} Pokémon in {paths.db}")
 
     if failures:
@@ -134,6 +148,115 @@ def fetch_cries(
             continue
         db.set_cry_path(pid, cry_path)
         print(f"{progress} {'saved' if cry_path else 'none available'}")
+        time.sleep(args.delay)
+    return failures
+
+
+def fetch_details(
+    db: PokedexDB, client: PokeAPIClient, paths: DataPaths, args: argparse.Namespace
+) -> list[str]:
+    """Region, abilities, moves and shiny artwork for Pokémon stored before they existed."""
+    todo = sorted(db.ids_without_details())
+    failures = []
+    for n, pid in enumerate(todo, 1):
+        progress = f"[{n}/{len(todo)}] details #{pid:03d}"
+        stored = db.get(pid)
+        assert stored is not None
+        try:
+            mon = client.pokemon(pid)
+            species = client.species(pid)
+            shiny = download_shiny(client, mon, paths) if args.artwork else None
+        except FETCH_ERRORS as exc:
+            failures.append(f"details #{pid}")
+            print(f"{progress} FAILED: {exc}", file=sys.stderr)
+            continue
+        updated = stored.model_copy(update={**details(mon, species), "shiny_artwork_path": shiny})
+        db.set_details(updated)
+        print(f"{progress} {stored.name}: {len(updated.level_moves)} moves")
+        time.sleep(args.delay)
+    return failures
+
+
+def fetch_species_details(
+    db: PokedexDB, client: PokeAPIClient, args: argparse.Namespace
+) -> list[str]:
+    """Colour, shape, habitat and the rest for Pokémon stored before they existed."""
+    todo = sorted(db.ids_without_species_details())
+    failures = []
+    for n, pid in enumerate(todo, 1):
+        progress = f"[{n}/{len(todo)}] species #{pid:03d}"
+        stored = db.get(pid)
+        assert stored is not None
+        try:
+            species = client.species(pid)
+        except FETCH_ERRORS as exc:
+            failures.append(f"species #{pid}")
+            print(f"{progress} FAILED: {exc}", file=sys.stderr)
+            continue
+        db.set_species_details(stored.model_copy(update=species_details(species)))
+        print(f"{progress} {stored.name}", flush=True)
+        time.sleep(args.delay)
+    return failures
+
+
+def fetch_moves_and_abilities(
+    db: PokedexDB, client: PokeAPIClient, args: argparse.Namespace
+) -> list[str]:
+    """Names, types and descriptions of every move and ability the Pokémon use."""
+    failures = []
+    moves, abilities = sorted(db.missing_move_ids()), sorted(db.missing_ability_ids())
+    if not moves and not abilities:
+        print("Moves and abilities: up to date.")
+    for n, move_id in enumerate(moves, 1):
+        try:
+            r = client.move(move_id)
+        except FETCH_ERRORS as exc:
+            failures.append(f"move {move_id}")
+            print(f"[{n}/{len(moves)}] move {move_id} FAILED: {exc}", file=sys.stderr)
+            continue
+        damage_class = r.damage_class.name if r.damage_class else None
+        db.upsert_move(
+            Move(
+                id=r.id,
+                name=r.english_name,
+                type=r.type.name,
+                power=r.power,
+                damage_class=damage_class,
+            )
+        )
+        print(f"[{n}/{len(moves)}] move {r.english_name}")
+        time.sleep(args.delay)
+    for n, ability_id in enumerate(abilities, 1):
+        try:
+            r = client.ability(ability_id)
+        except FETCH_ERRORS as exc:
+            failures.append(f"ability {ability_id}")
+            print(f"[{n}/{len(abilities)}] ability {ability_id} FAILED: {exc}", file=sys.stderr)
+            continue
+        db.upsert_ability(Ability(id=r.id, name=r.english_name, description=r.description))
+        print(f"[{n}/{len(abilities)}] ability {r.english_name}")
+        time.sleep(args.delay)
+    return failures
+
+
+def fetch_type_chart(db: PokedexDB, client: PokeAPIClient, args: argparse.Namespace) -> list[str]:
+    """The 18 × 18 type chart, one attacking type at a time."""
+    todo = TYPES if args.refresh else [t for t in TYPES if t not in db.attacking_types()]
+    if not todo:
+        print("Type chart: up to date.")
+    failures = []
+    for name in todo:
+        try:
+            relations = client.type(name).damage_relations
+        except FETCH_ERRORS as exc:
+            failures.append(f"type {name}")
+            print(f"Type {name} FAILED: {exc}", file=sys.stderr)
+            continue
+        effects = {t.name: 2.0 for t in relations.double_damage_to}
+        effects.update({t.name: 0.5 for t in relations.half_damage_to})
+        effects.update({t.name: 0.0 for t in relations.no_damage_to})
+        db.set_type_effects(name, effects)
+        print(f"Type {name}: {len(effects)} matchups")
         time.sleep(args.delay)
     return failures
 

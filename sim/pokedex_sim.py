@@ -83,14 +83,12 @@ TOUR = (
     (state.A, "entry-from-search"),
     (state.SELECT, None),  # replay
     *((state.B, None),) * 5,  # entry, results, delete U, delete B, home
-    (state.DOWN, None),
+    *((state.DOWN, None),) * 3,  # from SEARCH to SETTINGS
     (state.A, None),
-    (state.DOWN, None),
-    (state.DOWN, None),
-    (state.DOWN, None),
+    *((state.DOWN, None),) * 4,
     (state.DOWN, "settings"),
     (state.B, None),
-    (state.UP, None),
+    *((state.UP, None),) * 3,  # back to SEARCH
     (state.A, None),  # search again, with the cursor still on U
     (state.DOWN, None),
     *((state.RIGHT, None),) * 4,
@@ -101,6 +99,53 @@ TOUR = (
     (state.A, None),  # #043 Oddish
     (state.A, "evolution-oddish"),
     (state.START, "menu-from-evolution"),
+    # The quiz (the menu remembers SEARCH, two above QUIZ).
+    (state.DOWN, None),
+    (state.DOWN, None),
+    (state.A, "quiz"),
+    (state.A, "quiz-answered"),
+    (state.B, None),
+    # An entry's tabs.
+    *((state.UP, None),) * 3,
+    (state.A, None),  # the list, still on Oddish
+    (state.A, None),
+    (state.RIGHT, "tab-types"),
+    (state.RIGHT, "tab-abilities"),
+    (state.RIGHT, "tab-moves"),
+    (state.DOWN, None),
+    (state.DOWN, "tab-moves-scrolled"),
+    (state.RIGHT, None),  # back to INFO
+    (state.B, None),
+    # The region filter.
+    (state.SELECT, None),
+    (state.SELECT, "list-johto"),
+    (state.B, None),
+    # Shiny mode, from settings.
+    (state.START, None),
+    *((state.DOWN, None),) * 4,
+    (state.A, None),
+    *((state.DOWN, None),) * 5,
+    (state.A, "settings-shiny"),
+    (state.START, None),
+    *((state.UP, None),) * 4,
+    (state.A, "list-shiny"),
+    (state.A, "entry-shiny"),
+    # Browse: pick Legendary, and the other categories narrow to what legendaries have.
+    (state.START, None),
+    (state.DOWN, None),
+    (state.DOWN, None),
+    (state.A, "browse"),
+    (state.DOWN, None),
+    (state.A, "browse-special"),
+    (state.A, "browse-legendary"),  # picks Legendary
+    (state.B, "browse-after-legendary"),
+    (state.DOWN, None),
+    (state.A, "browse-colours-of-legendaries"),
+    (state.A, None),  # picks the first colour listed
+    (state.B, "browse-picked"),
+    (state.UP, None),
+    (state.UP, None),
+    (state.A, "list-browse"),
 )
 
 
@@ -117,6 +162,9 @@ class Events:
 
     def get(self):
         return self._source()
+
+    def clear(self):
+        pass
 
 
 class KeyboardButtons:
@@ -183,7 +231,7 @@ class Backlight:
     def __init__(self, screen):
         pass
 
-    def set(self, on):
+    def set(self, on, level=1.0):
         if not on:  # show the screen as off, as the real backlight would
             pygame.display.get_surface().fill((0, 0, 0))
             pygame.display.flip()
@@ -195,7 +243,7 @@ class EntryAudio:
     def __init__(self, output, records):
         self._records = records
         self._channel = None
-        self._next = None
+        self._next = []
         self.enabled = self.cry = self.narration = True
         self.level = 0.8
         try:
@@ -205,28 +253,33 @@ class EntryAudio:
             print("No sound device: running silently.")
 
     def play(self, pokemon_id):
-        self.stop()
-        if not self.enabled or self._channel is None:
-            return
         paths = []
         if self.cry:
             paths.append(self._records.existing("cry", pokemon_id, "wav"))
         if self.narration:
             paths.append(self._records.existing("say", pokemon_id, "wav"))
+        self.play_paths(paths)
+
+    def play_paths(self, paths):
+        self.stop()
         paths = [p for p in paths if p]
-        if paths:
+        if self.enabled and self._channel is not None and paths:
             self._start(paths[0])
-            self._next = paths[1] if len(paths) > 1 else None
+            self._next = paths[1:]
+
+    @property
+    def busy(self):
+        return self._channel is not None and (self._channel.get_busy() or bool(self._next))
 
     def poll(self):
         if self._channel is None or self._channel.get_busy():
             return
         if self._next:
-            path, self._next = self._next, None
+            path, self._next = self._next[0], self._next[1:]
             self._start(path)
 
     def stop(self):
-        self._next = None
+        self._next = []
         if self._channel is not None:
             self._channel.stop()
 
@@ -239,7 +292,10 @@ class EntryAudio:
             self.stop()
 
     def _start(self, path):
-        sound = pygame.mixer.Sound(path)
+        try:
+            sound = pygame.mixer.Sound(path)
+        except (OSError, pygame.error):  # missing or unreadable: skip it, as the Pico does
+            return
         sound.set_volume(self.level)
         self._channel.play(sound)
 
@@ -300,6 +356,19 @@ def main() -> int:
     install_fakes(args.card, script)
 
     from dex import app
+
+    if script is not None:  # the tour screenshots the start-up screen instead of waiting on it
+        # A fresh settings file each run, so the screenshots don't depend on the last one.
+        settings = args.shots / "settings.json"
+        settings.unlink(missing_ok=True)
+        app.SETTINGS_FILE = str(settings)
+
+        def start_up(ui, display, audio, keys):
+            ui.splash()
+            Shots.next_name = "splash"
+            display.refresh()
+
+        app.start_up = start_up
 
     with contextlib.suppress(SystemExit):  # closing the window, or the end of the tour
         app.run()

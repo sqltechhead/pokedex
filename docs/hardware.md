@@ -40,7 +40,7 @@ Bought, with enough for **two builds**. "Per build" is what one handheld uses.
 | Self-tapping screws, M2 / M2.5 pan head | 6 × M2.5×10, 8 × M2×5, 4 × M2×4 | |
 | 1 mm double-sided foam tape | | Holds the battery, charger, amp and SD board |
 | Heat-shrink, 22 AWG silicone wire, a multimeter | | |
-| microSD card | 1 | 1 GB or more, **FAT32** (the full card is about 480 MB) |
+| microSD card | 1 | 1 GB or more, **FAT32** (the full card is about 570 MB) |
 
 **Wire colours:** black = GND, red = 5 V and battery +, yellow = D-pad, green = A/B/START/SELECT/L/R, blue = amp signals, white = SD and battery sense.
 

@@ -23,6 +23,10 @@ class DataPaths:
         return self.root / "artwork"
 
     @property
+    def shiny_artwork(self) -> Path:
+        return self.root / "artwork-shiny"
+
+    @property
     def cries(self) -> Path:
         return self.root / "cries"
 
@@ -40,6 +44,9 @@ class DataPaths:
 
     def artwork_file(self, pokemon_id: int) -> Path:
         return self.artwork / f"{pokemon_id:04d}.png"
+
+    def shiny_file(self, pokemon_id: int) -> Path:
+        return self.shiny_artwork / f"{pokemon_id:04d}.png"
 
     def cry_file(self, pokemon_id: int) -> Path:
         return self.cries / f"{pokemon_id:04d}.ogg"

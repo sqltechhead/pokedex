@@ -8,6 +8,7 @@ import time
 
 from dex import hardware, state
 from dex.audio import EntryAudio
+from dex.browse import Browse
 from dex.index import Dex
 from dex.records import Records
 from dex.screens import UI, Fonts
@@ -18,6 +19,9 @@ DATA = hardware.SD_MOUNT + "/pokedex"
 SETTINGS_FILE = hardware.SD_MOUNT + "/settings.json"
 NAP = 0.01
 """Seconds between checks for button presses and the end of the cry."""
+SPLASH_SECONDS = (1.5, 3.0)
+"""The start-up screen stays at least this long, and at most this long while the
+jingle (about 1.3 s) plays."""
 BATTERY_EVERY = 30000
 """Milliseconds between battery readings."""
 
@@ -41,10 +45,13 @@ def run():
 
     records = Records(DATA)
     ui = UI(display, Fonts(DATA + "/fonts"), records)
-    st = state.PokedexState(dex, records.entry, Settings.load(SETTINGS_FILE))
+    settings = Settings.load(SETTINGS_FILE)
+    st = state.PokedexState(dex, records.entry, settings, browse=Browse(DATA + "/cat", dex))
+    backlight.set(True, st.settings.backlight)
     audio = EntryAudio(hardware.audio_out(), records)
     audio.apply(st.settings)
     keys = hardware.buttons()
+    start_up(ui, display, audio, keys)
     sleep = ScreenSleep(now_ms())
     repeater = Repeater()
     meter = hardware.Battery()
@@ -63,7 +70,8 @@ def run():
             if event.released:
                 repeater.release(action)
             elif sleep.note_input(now):
-                backlight.set(True)  # the press that wakes the screen does nothing else
+                # The press that wakes the screen does nothing else.
+                backlight.set(True, st.settings.backlight)
             else:
                 repeater.press(action, now, state.DPAD)
                 actions.append(action)
@@ -81,11 +89,29 @@ def run():
         if actions:
             sleep.last_input = now
             handle(actions, st, ui, audio)
+            backlight.set(True, st.settings.backlight)
             display.refresh()
         elif sleep.due(st.settings.sleep_minutes, now):
             sleep.asleep = True
             audio.stop()
             backlight.set(False)
+
+
+def start_up(ui, display, audio, keys):
+    """The splash screen while the jingle plays; any button skips it."""
+    ui.splash()
+    display.refresh()
+    audio.play_paths([DATA + "/sfx/startup.wav"])
+    shortest, longest = SPLASH_SECONDS
+    start = time.monotonic()
+    while True:
+        audio.poll()
+        elapsed = time.monotonic() - start
+        if keys.events.get() or elapsed > longest or (elapsed > shortest and not audio.busy):
+            break
+        time.sleep(NAP)
+    audio.stop()
+    keys.events.clear()
 
 
 def handle(actions, st, ui, audio):
@@ -99,9 +125,14 @@ def handle(actions, st, ui, audio):
         audio.apply(st.settings)
         saved = st.settings.save(SETTINGS_FILE)
         ui.notice = "" if saved else "Couldn't save settings: is the SD card locked?"
-    if state.audio_due(before, st) or st.replay:
+    if st.quiz_sound:
+        target = st.dex.ids[st.quiz.target]
+        sfx = DATA + "/sfx/" + st.quiz_sound + ".wav"
+        audio.play_paths([sfx, ui.records.existing("cry", target, "wav")])
+        st.quiz_sound = None
+    elif state.audio_due(before, st) or st.replay:
         st.replay = False
         audio.play(st.selected_id)
-    elif st.view != state.DETAIL and before[0] == state.DETAIL:
-        audio.stop()  # leaving the entry ends its narration
+    elif st.view != before[0] and before[0] in (state.DETAIL, state.QUIZ):
+        audio.stop()  # leaving the entry or quiz ends its sound
     ui.show(st)

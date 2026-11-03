@@ -31,14 +31,21 @@ def test_settings_change_with_dpad_and_a(state: PokedexState):
     state.settings_index = row_of("units")
     state.handle(s.RIGHT)
     assert state.settings.units == "imperial"
-    state.handle(s.UP)
-    state.handle(s.UP)
-    state.handle(s.UP)
-    state.handle(s.UP)
+    state.settings_index = 0
     state.handle(s.UP)
     assert state.settings_index == len(ROWS) - 1  # wrapped from the top
     state.handle(s.B)
     assert state.view == s.HOME
+
+
+def test_brightness_and_shiny():
+    settings = Settings()
+    assert settings.backlight == 0.8
+    assert settings.adjusted("brightness", -20).brightness == 1  # never fully dark
+    assert settings.adjusted("brightness", 5).describe("brightness") == "100%"
+    assert settings.shiny is False
+    assert settings.adjusted("shiny", 1).shiny is True
+    assert Settings({"brightness": 0}).brightness == 8  # out of range: default
 
 
 def test_volume_stays_in_range():

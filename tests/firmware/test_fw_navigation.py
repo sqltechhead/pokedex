@@ -60,7 +60,7 @@ def test_open_browse_and_close_entry(state: PokedexState):
     open_list(state)
     state.handle(s.A)
     assert state.view == s.DETAIL
-    state.handle(s.RIGHT)
+    state.handle(s.DOWN)
     assert state.selected_id == 4
     assert state.entry["genus"] == "Test Pokémon"
     state.handle(s.B)
@@ -145,8 +145,12 @@ def test_audio_plays_on_open_and_change_not_on_return(state: PokedexState):
     assert audio_due(before, state)
 
     before = (state.view, state.selected_id)
-    state.handle(s.RIGHT)
+    state.handle(s.DOWN)
     assert audio_due(before, state)
+
+    before = (state.view, state.selected_id)
+    state.handle(s.RIGHT)  # another tab of the same entry: no replay
+    assert not audio_due(before, state)
 
     state.handle(s.A)  # to the evolution screen and back to the same entry
     before = (state.view, state.selected_id)
@@ -221,3 +225,84 @@ def test_missing_entry_file():
     open_evolution(state, 4)
     assert state.view == s.EVOLUTION
     assert state.stages == []
+
+
+# Entry tabs
+
+
+def test_left_right_switch_tabs_and_moves_scroll(state: PokedexState):
+    open_list(state)
+    state.handle(s.A)
+    state.move_rows = 2
+    state.handle(s.LEFT)
+    assert s.TABS[state.tab] == "MOVES"  # wraps backwards
+    before = state.selected_id
+    state.handle(s.DOWN)  # on MOVES, up/down scroll instead of changing entry
+    state.handle(s.DOWN)
+    state.handle(s.DOWN)
+    assert state.selected_id == before
+    assert state.move_scroll == len(state.entry["moves"]) - 2  # stops at the last row
+    state.handle(s.RIGHT)
+    assert state.tab == s.INFO
+    assert state.move_scroll == 0
+    state.handle(s.DOWN)
+    assert state.selected_id != before
+
+
+# Region filter
+
+
+def test_select_cycles_regions_and_combines_with_type(state: PokedexState):
+    open_list(state)
+    state.handle(s.SELECT)
+    assert state.region_name == "Kanto"
+    assert all(state.dex.region(p) == 1 for p in state.visible)
+    state.set_filter("fire")
+    assert ids(state.dex, state.visible) == [4, 5, 6]
+    state.handle(s.B)  # clears both
+    assert (state.type_filter, state.region_filter) == (None, 0)
+    assert len(state.visible) == len(ENTRIES)
+    for _ in range(len(state.available_regions) + 1):
+        state.handle(s.SELECT)
+    assert state.region_filter == 0
+
+
+def test_opening_from_a_chain_clears_a_hiding_region(state: PokedexState):
+    open_list(state)
+    state.set_filter(None, 6)  # Kalos
+    assert state.open_species(1)
+    assert state.region_filter == 0
+
+
+@pytest.mark.parametrize("leave", ["next", "jump", "back_to_list", "evolution", "search"])
+def test_every_entry_opens_on_info(state: PokedexState, leave: str):
+    open_list(state)
+    state.handle(s.A)
+    state.handle(s.RIGHT)  # TYPES
+    assert state.tab == s.MATCHUPS
+    if leave == "next":
+        state.handle(s.DOWN)
+    elif leave == "jump":
+        state.handle(s.R)
+    elif leave == "back_to_list":
+        state.handle(s.B)
+        state.handle(s.A)
+    elif leave == "evolution":
+        state.handle(s.A)
+        state.handle(s.B)
+    else:
+        state.open_species(25, return_to=s.SEARCH)
+    assert state.view == s.DETAIL
+    assert state.tab == s.INFO
+
+
+def test_pokedex_always_opens_at_number_one(state: PokedexState):
+    pokedex = next(i for i, (_, view) in enumerate(MENU) if view == s.LIST)
+    state.open_menu(pokedex)
+    for _ in range(4):
+        state.handle(s.DOWN)
+    state.set_filter("fire")
+    state.handle(s.START)  # out to the menu...
+    state.open_menu(pokedex)  # ...and back in
+    assert state.index == 0 and state.selected_id == 1
+    assert state.type_filter is None and len(state.visible) == len(ENTRIES)

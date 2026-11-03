@@ -8,6 +8,8 @@ ROWS = (
     ("sound", "Sound", "switch"),
     ("cry", "Cries", "switch"),
     ("narration", "Read entries aloud", "switch"),
+    ("brightness", "Brightness", "slider"),
+    ("shiny", "Shiny Pokémon", "switch"),
     ("units", "Units", "choice"),
     ("sleep_minutes", "Screen sleep", "choice"),
 )
@@ -22,11 +24,15 @@ DEFAULTS = {
     "sound": True,
     "cry": True,
     "narration": True,
+    "brightness": 8,
+    "shiny": False,
     "units": "metric",
     "sleep_minutes": 2,
 }
 VOLUME_STEPS = 10
-"""Volume is 0-10 rather than a float, so it stays exact on the Pico."""
+"""Sliders count in whole steps rather than floats, so they stay exact on the Pico."""
+SLIDERS = {"volume": (0, VOLUME_STEPS), "brightness": (1, VOLUME_STEPS)}
+"""Each slider's lowest and highest step. Brightness never goes fully dark."""
 
 
 class Settings:
@@ -50,11 +56,17 @@ class Settings:
         """Volume as 0.0-1.0 for the audio mixer."""
         return self.values["volume"] / VOLUME_STEPS
 
+    @property
+    def backlight(self):
+        """Brightness as 0.1-1.0 for the screen's backlight."""
+        return self.values["brightness"] / VOLUME_STEPS
+
     def adjusted(self, key, delta):
         """A copy with one setting changed: volume steps, switches flip, choices cycle."""
         values = dict(self.values)
-        if key == "volume":
-            values[key] = min(VOLUME_STEPS, max(0, values[key] + delta))
+        if key in SLIDERS:
+            low, high = SLIDERS[key]
+            values[key] = min(high, max(low, values[key] + delta))
         elif key in CHOICES:
             options = CHOICES[key]
             values[key] = options[(options.index(values[key]) + delta) % len(options)]
@@ -64,7 +76,7 @@ class Settings:
 
     def describe(self, key):
         value = self.values[key]
-        if key == "volume":
+        if key in SLIDERS:
             return f"{value * 100 // VOLUME_STEPS}%"
         if key == "sleep_minutes":
             return "Never" if value == 0 else f"{value} min"
@@ -95,8 +107,9 @@ class Settings:
 def _valid(key, value):
     if key not in DEFAULTS:
         return False
-    if key == "volume":
-        return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 10
+    if key in SLIDERS:
+        low, high = SLIDERS[key]
+        return isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
     if key in CHOICES:
         return value in CHOICES[key]
     return value is True or value is False

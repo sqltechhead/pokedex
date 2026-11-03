@@ -20,6 +20,41 @@ class BaseStats(BaseModel):
         return sum(self.model_dump().values())
 
 
+class PokemonAbility(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    ability_id: int
+    hidden: bool = False
+
+
+class LevelMove(BaseModel):
+    """A move learned by levelling up, e.g. Thunder Shock at level 1."""
+
+    model_config = ConfigDict(frozen=True)
+
+    level: int
+    move_id: int
+
+
+class Move(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: int
+    name: str
+    type: str
+    power: int | None = None
+    damage_class: str | None = None
+    """physical, special or status."""
+
+
+class Ability(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: int
+    name: str
+    description: str = ""
+
+
 class Pokemon(BaseModel):
     """One National Pokédex entry, as stored in the database."""
 
@@ -45,6 +80,25 @@ class Pokemon(BaseModel):
     narration_path: str | None = None
     """Spoken Pokédex entry, relative to the data folder."""
     evolution_chain_id: int | None = None
+    generation: int | None = None
+    """1 (Kanto) to 9 (Paldea). None on rows fetched before regions were stored."""
+    shiny_artwork_path: str | None = None
+    """Shiny official artwork, relative to the data folder."""
+    abilities: tuple[PokemonAbility, ...] = ()
+    level_moves: tuple[LevelMove, ...] = ()
+    """Level-up moves in move_version, by level."""
+    move_version: str | None = None
+    """The game the moves are from, e.g. "scarlet-violet" (the newest with level-up data)."""
+    color: str | None = None
+    """PokéAPI's colour, e.g. "pink". None on rows fetched before it was stored."""
+    shape: str | None = None
+    """e.g. "quadruped" (four legs)."""
+    habitat: str | None = None
+    """e.g. "forest"; Gen 1-3 only."""
+    legendary: bool = False
+    mythical: bool = False
+    baby: bool = False
+    egg_groups: tuple[str, ...] = ()
     fetched_at: datetime | None = None
 
     @property
