@@ -6,16 +6,16 @@ from dex.index import Dex
 from dex.state import PokedexState
 
 ENTRIES = (
-    (1, "Bulbasaur", "bulbasaur", "grass", "poison"),
-    (4, "Charmander", "charmander", "fire", None),
-    (5, "Charmeleon", "charmeleon", "fire", None),
-    (6, "Charizard", "charizard", "fire", "flying"),
-    (7, "Squirtle", "squirtle", "water", None),
-    (25, "Pikachu", "pikachu", "electric", None),
-    (29, "Nidoran♀", "nidoran", "poison", None),
-    (122, "Mr. Mime", "mrmime", "psychic", "fairy"),
-    (133, "Eevee", "eevee", "normal", None),
-    (669, "Flabébé", "flabebe", "fairy", None),
+    (1, "Bulbasaur", "bulbasaur", "grass", "poison", 1),
+    (4, "Charmander", "charmander", "fire", None, 1),
+    (5, "Charmeleon", "charmeleon", "fire", None, 1),
+    (6, "Charizard", "charizard", "fire", "flying", 1),
+    (7, "Squirtle", "squirtle", "water", None, 1),
+    (25, "Pikachu", "pikachu", "electric", None, 1),
+    (29, "Nidoran♀", "nidoran", "poison", None, 1),
+    (122, "Mr. Mime", "mrmime", "psychic", "fairy", 1),
+    (133, "Eevee", "eevee", "normal", None, 1),
+    (669, "Flabébé", "flabebe", "fairy", None, 6),
 )
 
 CHARMANDER_CHAIN = {
@@ -42,6 +42,15 @@ def entry(pokemon_id: int) -> dict | None:
         "stats": [39, 52, 43, 60, 50, 65],
         "flavor": "A test entry.",
         "chain": chains.get(pokemon_id),
+        "region": 1,
+        "abilities": [["Blaze", False, "Powers up Fire-type moves."]],
+        "moves_from": "Scarlet & Violet",
+        "moves": [
+            [1, "Scratch", "normal", 40],
+            [1, "Growl", "normal", None],
+            [4, "Ember", "fire", 40],
+        ],
+        "matchups": {"4": [], "2": ["water", "ground"], "0.5": ["fire"], "0.25": [], "0": []},
     }
 
 

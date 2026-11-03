@@ -13,6 +13,8 @@ PANEL = (30, 37, 45)
 """dex.theme.PANEL: the background behind every picture on the device."""
 TRANSPARENT = (255, 0, 255)
 """Palette colour 0; never drawn, so any colour would do."""
+SILHOUETTE = (8, 10, 12)
+"""The quiz's "Who's that Pokémon?" shadow."""
 
 
 def to_bmp(source: Path, dest: Path, box: int, *, pixel_art: bool = False) -> None:
@@ -28,6 +30,18 @@ def to_bmp(source: Path, dest: Path, box: int, *, pixel_art: bool = False) -> No
         image.thumbnail((box, box), Image.Resampling.LANCZOS)
     dest.parent.mkdir(parents=True, exist_ok=True)
     indexed(image).save(dest, format="BMP")
+
+
+def silhouette(source: Path, dest: Path, box: int) -> None:
+    """The artwork's outline filled with one dark colour, as a 2-colour BMP."""
+    image = Image.open(source).convert("RGBA")
+    image.thumbnail((box, box), Image.Resampling.LANCZOS)
+    solid = image.getchannel("A").point(lambda a: 1 if a >= 128 else 0)
+    result = Image.frombytes("P", image.size, solid.tobytes())
+    palette = [*TRANSPARENT, *SILHOUETTE]
+    result.putpalette(palette + [0] * (768 - len(palette)))
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    result.save(dest, format="BMP")
 
 
 def _enlarge_crisp(image: Image.Image, box: int) -> Image.Image:

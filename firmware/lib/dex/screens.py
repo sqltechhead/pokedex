@@ -15,6 +15,7 @@ from adafruit_bitmap_font import bitmap_font
 from adafruit_display_text import bitmap_label, wrap_text_to_pixels
 
 from dex import battery, evolution, keyboard, state, theme
+from dex.index import REGIONS
 from dex.settings import KEY, KIND, LABEL
 from dex.settings import ROWS as SETTING_ROWS
 from dex.units import format_height, format_weight
@@ -177,6 +178,10 @@ class Badge:
         self.rect.x = left
         self.label.anchored_position = (left + self.width // 2, self._cy)
 
+    def move_to_row(self, cy):
+        self._cy = cy
+        self.rect.y = cy - self.HEIGHT // 2
+
 
 class TypeBadges:
     """One or two type badges in a row starting at x (or centred on it)."""
@@ -231,8 +236,8 @@ class Screen:
 
 
 class HomeScreen(Screen):
-    ROW_H = 64
-    GAP = 8
+    ROW_H = 44
+    GAP = 7
 
     def __init__(self, ui, st):
         super().__init__(ui)
@@ -256,9 +261,14 @@ class HomeScreen(Screen):
 
     def update(self, st):
         settings = st.settings
+        quiz = st.quiz
         subtitles = (
             f"{len(st.dex)} entries",
             "Find by name or number",
+            f"{st.browse.count} picked"
+            if st.browse and st.browse.count
+            else "Colour, shape, size...",
+            f"Score {quiz.score}/{quiz.asked}" if quiz and quiz.asked else "Who's that Pokémon?",
             "Volume {} · Sound {}".format(settings.describe("volume"), settings.describe("sound")),
         )
         for i, label in enumerate(self.subtitles):
@@ -281,6 +291,9 @@ class ListScreen(Screen):
         header(g, fonts, "POKÉDEX")
         self.count = text(g, fonts.body, "", theme.TEXT, HEADER_RIGHT, HEADER_H // 2, (1, 0.5))
         self.filter = Badge(g, fonts.bold, HEADER_H // 2)
+        self.region = Badge(g, fonts.bold, HEADER_H // 2)
+        self.picks = Badge(g, fonts.bold, HEADER_H // 2)
+        """How many browse values are picked, e.g. "✓ 2"."""
 
         # Preview of the selected Pokémon, on the left.
         rect(g, BODY_X, BODY_Y, self.PREVIEW_W, BODY_H, theme.PANEL)
@@ -322,14 +335,27 @@ class ListScreen(Screen):
     def update(self, st):
         total = len(st.visible)
         set_text(self.count, str(total))
-        label = (st.type_filter or "all").upper()
+        # "ALL" when nothing is filtered; otherwise the other badges say enough.
+        label = (st.type_filter or ("" if st.filtered else "all")).upper()
         color = theme.type_color(st.type_filter) if st.type_filter else theme.PANEL_LIGHT
         self.filter.set(label, color)
-        self.filter.place(HEADER_RIGHT - text_width(self.count) - 8 - self.filter.width)
+        right = HEADER_RIGHT - text_width(self.count) - 8
+        if self.filter.width:
+            self.filter.place(right - self.filter.width)
+            right -= self.filter.width + 4
+        self.region.set(st.region_name.upper(), theme.PANEL_LIGHT)
+        if self.region.width:
+            self.region.place(right - self.region.width)
+            right -= self.region.width + 4
+        picked = st.browse.count if st.browse else 0
+        self.picks.set(f"✓ {picked}" if picked else "", theme.RIGHT)
+        if self.picks.width:
+            self.picks.place(right - self.picks.width)
 
         top = max(0, min(st.index - self.ROWS // 2, total - self.ROWS))
-        if self._shown != (top, st.type_filter):
-            self._shown = (top, st.type_filter)
+        shown = (top, st.type_filter, st.region_filter, picked, len(st.visible))
+        if self._shown != shown:
+            self._shown = shown
             self._draw_rows(st, top)
         selected_row = st.index - top
         self.highlight.y = BODY_Y + selected_row * self.ROW_H
@@ -343,11 +369,11 @@ class ListScreen(Screen):
         else:
             self.thumb.y = OFFSCREEN
 
-        if st.selected != self._preview_pos:
-            self._preview_pos = st.selected
+        if (st.selected, self.ui.shiny) != self._preview_pos:
+            self._preview_pos = (st.selected, self.ui.shiny)
             self._draw_preview(st)
-        hints = "▲▼ move  ◀▶ page  A open  L/R type"
-        set_text(self.hints, hints + ("  B all" if st.type_filter else ""))
+        hints = "▲▼ move  ◀▶ page  A open  L/R type  SEL region"
+        set_text(self.hints, hints + ("  B all" if st.filtered else ""))
 
     def _draw_rows(self, st, top):
         dex = st.dex
@@ -381,17 +407,31 @@ class ListScreen(Screen):
             self.preview_types.set(())
             return
         pokemon_id = st.dex.ids[pos]
-        path = self.ui.records.file("spr", pokemon_id, "bmp")
-        replace(self.sprite, image(path, *self.sprite_center))
+        replace(self.sprite, image(self.ui.picture("spr", pokemon_id), *self.sprite_center))
         self.preview_number.text = "#" + number(pokemon_id)
         self.preview_name.text = st.dex.names[pos]
         self.preview_types.set(st.dex.types(pos))
 
 
+MATCHUP_SECTIONS = (
+    ("Weak to", ("4", "2")),
+    ("Resists", ("0.5", "0.25")),
+    ("Not affected by", ("0",)),
+)
+MULTIPLIER_LABELS = {"4": " ×4", "2": "", "0.5": "", "0.25": " ×¼", "0": ""}
+"""Extra text on a matchup badge: ×4 and ×¼ stand out from the usual ×2 and ×½."""
+
+
 class DetailScreen(Screen):
+    """An entry, in four tabs switched with LEFT/RIGHT: info, type matchups, abilities, moves.
+
+    The artwork stays on the left; the tab fills the rest.
+    """
+
     FLAVOR_H = 58
     ART = 190
     FLAVOR_LINES = 3
+    MOVE_ROW_H = 19
 
     def __init__(self, ui, st):
         super().__init__(ui)
@@ -406,11 +446,16 @@ class DetailScreen(Screen):
         circle(g, self.art_center[0], self.art_center[1], art // 2, theme.PANEL)
         self.art = displayio.Group()
         g.append(self.art)
+        self.tab_x = BODY_X + art + 2 * PAD
+        self.tab_w = BODY_X + BODY_W - self.tab_x
+        st.move_rows = (BODY_H - 22) // self.MOVE_ROW_H
 
-        x = BODY_X + art + 2 * PAD
-        right = BODY_X + BODY_W
-        self.types = TypeBadges(g, fonts.bold, x, BODY_Y + 9)
-        self.measures = text(g, fonts.body, "", theme.MUTED, x, BODY_Y + 9)
+        # INFO: types, size, stats and the Pokédex text.
+        self.info = displayio.Group()
+        g.append(self.info)
+        x, right = self.tab_x, BODY_X + BODY_W
+        self.types = TypeBadges(self.info, fonts.bold, x, BODY_Y + 9)
+        self.measures = text(self.info, fonts.body, "", theme.MUTED, x, BODY_Y + 9)
         rows_top = BODY_Y + 26
         row_h = (BODY_Y + top_h - rows_top) // (len(theme.STAT_LABELS) + 1)
         self.bar_x = x + 84
@@ -418,37 +463,71 @@ class DetailScreen(Screen):
         self.stats = []
         for i, label in enumerate(theme.STAT_LABELS + ("TOTAL",)):
             cy = rows_top + i * row_h + row_h // 2
-            text(g, fonts.bold, label, theme.MUTED, x, cy)
-            value = text(g, fonts.body, "", theme.TEXT, x + 76, cy, (1, 0.5))
+            text(self.info, fonts.bold, label, theme.MUTED, x, cy)
+            value = text(self.info, fonts.body, "", theme.TEXT, x + 76, cy, (1, 0.5))
             bar = None
             if i < len(theme.STAT_LABELS):
-                rect(g, self.bar_x, cy - 4, self.bar_w, 8, theme.PANEL)
-                bar = rect(g, self.bar_x, cy - 4, 1, 8, theme.MUTED)
+                rect(self.info, self.bar_x, cy - 4, self.bar_w, 8, theme.PANEL)
+                bar = rect(self.info, self.bar_x, cy - 4, 1, 8, theme.MUTED)
             self.stats.append((value, bar))
-
         flavor_y = BODY_Y + BODY_H - self.FLAVOR_H
-        rect(g, BODY_X, flavor_y, BODY_W, self.FLAVOR_H, theme.PANEL)
+        rect(self.info, BODY_X, flavor_y, BODY_W, self.FLAVOR_H, theme.PANEL)
         self.flavor = text(
-            g, fonts.body, "", theme.TEXT, BODY_X + 8, flavor_y + 5, (0, 0), line_spacing=1.1
+            self.info,
+            fonts.body,
+            "",
+            theme.TEXT,
+            BODY_X + 8,
+            flavor_y + 5,
+            (0, 0),
+            line_spacing=1.1,
         )
-        hints = "◀▶ next  L/R ±10  A evolution  SEL replay  B back"
-        self.position = footer(g, fonts, hints)[1]
+
+        # The other tabs, built when shown; plus the region under the artwork.
+        self.tab = displayio.Group()
+        g.append(self.tab)
+        self.region = text(
+            g, fonts.bold, "", theme.MUTED, self.art_center[0], flavor_y + 29, (0.5, 0.5)
+        )
+
+        # Footer: the tab names, the current one lit, and the position in the list.
+        y = H - FOOTER_H // 2
+        self.tab_labels = []
+        x = PAD
+        for name in state.TABS:
+            label = text(g, fonts.small, name, theme.MUTED, x, y)
+            self.tab_labels.append(label)
+            x += text_width(label) + 14
+        self.position = text(g, fonts.small, "", theme.MUTED, W - PAD, y, (1, 0.5))
         self._shown = None
+        self._shown_tab = None
 
     def update(self, st):
         pokemon_id = st.selected_id
         position = f"{st.index + 1}/{len(st.visible)}"
         set_text(self.position, position if st.settings.sound else "MUTED   " + position)
-        if (pokemon_id, st.settings.units) == self._shown:
-            return
-        self._shown = (pokemon_id, st.settings.units)
-        pos = st.selected
+        for i, label in enumerate(self.tab_labels):
+            set_color(label, theme.TEXT if i == st.tab else theme.MUTED)
+        entry = st.entry
+        shown = (pokemon_id, st.settings.units, self.ui.shiny)
+        if shown != self._shown:
+            self._shown = shown
+            self._shown_tab = None
+            self._draw_info(st, entry)
+        tab = (st.tab, st.move_scroll)
+        if tab != self._shown_tab:
+            self._shown_tab = tab
+            self.info.hidden = st.tab != state.INFO
+            replace(self.tab, self._build_tab(st, entry))
+            region = REGIONS[entry.get("region") or 0] if entry else ""
+            set_text(self.region, region if st.tab != state.INFO else "")
+
+    def _draw_info(self, st, entry):
+        pokemon_id, pos = st.selected_id, st.selected
         self.title.text = f"#{number(pokemon_id)}  {st.dex.names[pos]}"
-        replace(self.art, image(self.ui.records.file("art", pokemon_id, "bmp"), *self.art_center))
+        replace(self.art, image(self.ui.picture("art", pokemon_id), *self.art_center))
         width = self.types.set(st.dex.types(pos))
         self.measures.anchored_position = (self.types.x + width + 10, BODY_Y + 9)
-
-        entry = st.entry
         if entry is None:
             self.genus.text = ""
             self.measures.text = ""
@@ -471,6 +550,82 @@ class DetailScreen(Screen):
                 bar.pixel_shader = palette(theme.stat_color(value))
         lines = wrap_text_to_pixels(entry.get("flavor") or "", BODY_W - 16, self.fonts.body)
         self.flavor.text = "\n".join(lines[: self.FLAVOR_LINES])
+
+    def _build_tab(self, st, entry):
+        if st.tab == state.INFO:
+            return None
+        group = displayio.Group()
+        key = {state.MATCHUPS: "matchups", state.ABILITIES: "abilities", state.MOVES: "moves"}
+        if not entry or not entry.get(key[st.tab]):
+            message = "Not on this SD card yet. Rebuild it with the latest pokedex-fetch."
+            lines = wrap_text_to_pixels(message, self.tab_w, self.fonts.body)
+            text(group, self.fonts.body, "\n".join(lines), theme.MUTED, self.tab_x, BODY_Y, (0, 0))
+            return group
+        if st.tab == state.MATCHUPS:
+            self._matchups(group, entry["matchups"])
+        elif st.tab == state.ABILITIES:
+            self._abilities(group, entry["abilities"])
+        else:
+            self._moves(group, entry, st.move_scroll)
+        return group
+
+    def _matchups(self, group, matchups):
+        fonts, x0, right = self.fonts, self.tab_x, self.tab_x + self.tab_w
+        y = BODY_Y + 6
+        for title, keys in MATCHUP_SECTIONS:
+            text(group, fonts.bold, title, theme.MUTED, x0, y)
+            y += 18
+            types = [(t, key) for key in keys for t in matchups.get(key, ())]
+            if not types:
+                text(group, fonts.body, "None", theme.MUTED, x0, y)
+                y += 26
+                continue
+            x = x0
+            for type_name, key in types:
+                label = type_name.upper() + MULTIPLIER_LABELS[key]
+                badge = Badge(group, fonts.bold, y)
+                badge.set(label, theme.type_color(type_name))
+                if x + badge.width > right:  # wrap onto the next row
+                    x, y = x0, y + Badge.HEIGHT + 4
+                    badge.move_to_row(y)
+                badge.place(x)
+                x += badge.width + 4
+            y += Badge.HEIGHT + 14
+
+    def _abilities(self, group, abilities):
+        fonts, x = self.fonts, self.tab_x
+        y = BODY_Y + 6
+        for name, hidden, description in abilities:
+            label = text(group, fonts.name, name, theme.TEXT, x, y)
+            if hidden:
+                text(
+                    group, fonts.small, "hidden ability", theme.MUTED, x + text_width(label) + 8, y
+                )
+            y += 12
+            lines = wrap_text_to_pixels(description, self.tab_w, fonts.small)[:3]
+            if lines:
+                text(group, fonts.small, "\n".join(lines), theme.MUTED, x, y, (0, 0))
+            y += 14 * len(lines) + 16
+
+    def _moves(self, group, entry, scroll):
+        fonts, x, right = self.fonts, self.tab_x, self.tab_x + self.tab_w
+        moves = entry["moves"]
+        rows = (BODY_H - 22) // self.MOVE_ROW_H
+        shown = moves[scroll : scroll + rows]
+        heading = "Level-up moves · " + (entry.get("moves_from") or "")
+        fit(text(group, fonts.small, heading, theme.MUTED, x, BODY_Y + 6), self.tab_w - 60)
+        if len(moves) > rows:
+            more = f"{scroll + 1}-{scroll + len(shown)} of {len(moves)}"
+            text(group, fonts.small, more, theme.MUTED, right, BODY_Y + 6, (1, 0.5))
+        for i, (level, name, type_name, power) in enumerate(shown):
+            cy = BODY_Y + 22 + i * self.MOVE_ROW_H + self.MOVE_ROW_H // 2
+            when = "Evo" if level == 0 else str(level)
+            text(group, fonts.bold, when, theme.MUTED, x + 24, cy, (1, 0.5))
+            circle(group, x + 34, cy, 4, theme.type_color(type_name))
+            label = text(group, fonts.body, name, theme.TEXT, x + 44, cy)
+            fit(label, self.tab_w - 84)
+            if power:
+                text(group, fonts.body, str(power), theme.MUTED, right, cy, (1, 0.5))
 
 
 class EvolutionScreen(Screen):
@@ -553,8 +708,7 @@ class EvolutionScreen(Screen):
         fitting = [s for s in self.PICTURE_SIZES if s <= size]
         picture = None
         if on_card and fitting:
-            path = self.ui.records.file(f"ev{fitting[0]}", species_id, "bmp")
-            picture = image(path, cx, cy)
+            picture = image(self.ui.picture(f"ev{fitting[0]}", species_id), cx, cy)
         if picture is not None:
             self.group.append(picture)
         else:
@@ -702,8 +856,8 @@ class SearchScreen(Screen):
 
 
 class SettingsScreen(Screen):
-    ROW_H = 34
-    GAP = 6
+    ROW_H = 27
+    GAP = 4
 
     def __init__(self, ui, st):
         super().__init__(ui)
@@ -736,6 +890,157 @@ class SettingsScreen(Screen):
         set_text(self.notice, self.ui.notice)
 
 
+class QuizScreen(Screen):
+    """Who's that Pokémon? The silhouette on the left, four names on the right."""
+
+    ART = 190
+    CHOICE_H = 40
+    GAP = 8
+
+    def __init__(self, ui, st):
+        super().__init__(ui)
+        g, fonts = self.group, self.fonts
+        rect(g, 0, 0, W, H, theme.BG)
+        header(g, fonts, "WHO'S THAT POKÉMON?")
+        self.score = text(g, fonts.body, "", theme.TEXT, HEADER_RIGHT, HEADER_H // 2, (1, 0.5))
+        art = min(self.ART, BODY_H)
+        self.art_center = (BODY_X + art // 2, BODY_Y + BODY_H // 2)
+        circle(g, self.art_center[0], self.art_center[1], art // 2, theme.PANEL)
+        self.art = displayio.Group()
+        g.append(self.art)
+        self.x = BODY_X + art + 2 * PAD
+        self.w = BODY_X + BODY_W - self.x
+        self.top = BODY_Y + 8
+        self.boxes = []
+        self.names = []
+        for i in range(4):
+            y = self.top + i * (self.CHOICE_H + self.GAP)
+            self.boxes.append(rect(g, self.x, y, self.w, self.CHOICE_H, theme.PANEL))
+            cy = y + self.CHOICE_H // 2
+            self.names.append(text(g, fonts.name, "", theme.TEXT, self.x + 14, cy))
+        message_y = self.top + 4 * (self.CHOICE_H + self.GAP) + 14
+        cx = self.x + self.w // 2
+        self.message = text(g, fonts.name, "", theme.TEXT, cx, message_y, (0.5, 0.5))
+        self.hints = footer(g, fonts, "")[0]
+        self._shown = None
+
+    def update(self, st):
+        quiz = st.quiz
+        set_text(self.score, f"{quiz.score}/{quiz.asked}" if quiz.asked else "")
+        shown = (quiz.target, quiz.answered, self.ui.shiny)
+        if shown != self._shown:
+            self._shown = shown
+            pokemon_id = st.dex.ids[quiz.target]
+            if quiz.answered:
+                path = self.ui.picture("art", pokemon_id)
+            else:
+                path = self.ui.records.file("sil", pokemon_id, "bmp")
+            replace(self.art, image(path, *self.art_center))
+            for i, label in enumerate(self.names):
+                set_text(label, st.dex.names[quiz.choices[i]] if i < len(quiz.choices) else "")
+        for i, box in enumerate(self.boxes):
+            color = theme.PANEL
+            if i >= len(quiz.choices):
+                color = theme.BG
+            elif quiz.answered and quiz.choices[i] == quiz.target:
+                color = theme.RIGHT
+            elif i == quiz.cursor:
+                color = theme.ACCENT
+            box.pixel_shader = palette(color)
+        if quiz.answered:
+            name = st.dex.names[quiz.target]
+            set_text(self.message, f"It's {name}!" if quiz.correct else f"No, it's {name}!")
+            set_text(self.hints, "A next    B stop")
+        else:
+            set_text(self.message, "")
+            set_text(self.hints, "▲▼ choose    A answer    B stop")
+
+
+class BrowseScreen(Screen):
+    """Categories, then a category's values: A picks (✓) or unpicks a value."""
+
+    ROWS = 9
+    ROW_H = 28
+
+    def __init__(self, ui, st):
+        super().__init__(ui)
+        g, fonts = self.group, self.fonts
+        rect(g, 0, 0, W, H, theme.BG)
+        self.title = header(g, fonts, "BROWSE")
+        self.matches = text(g, fonts.body, "", theme.TEXT, HEADER_RIGHT, HEADER_H // 2, (1, 0.5))
+        st.value_rows = self.ROWS
+        self.highlight = rect(g, BODY_X, BODY_Y, BODY_W - 6, self.ROW_H, theme.ACCENT)
+        self.rows = []
+        for row in range(self.ROWS):
+            cy = BODY_Y + row * self.ROW_H + self.ROW_H // 2
+            self.rows.append(
+                (
+                    text(g, fonts.bold, "", theme.RIGHT, BODY_X + 8, cy),
+                    text(g, fonts.body, "", theme.TEXT, BODY_X + 28, cy),
+                    text(g, fonts.small, "", theme.MUTED, BODY_X + BODY_W - 16, cy, (1, 0.5)),
+                )
+            )
+        track_x = BODY_X + BODY_W - 3
+        rect(g, track_x, BODY_Y, 3, self.ROWS * self.ROW_H, theme.PANEL)
+        self.thumb = rect(g, track_x, BODY_Y, 3, 10, theme.MUTED)
+        self.hints = footer(g, fonts, "")[0]
+
+    def update(self, st):
+        browse = st.browse
+        set_text(self.matches, f"{len(st.visible)} match")
+        if browse is None or not browse.categories:
+            self._show_rows([("", "No categories on this SD card yet.", "")], -1)
+            set_text(self.hints, "B back")
+            return
+        if st.browse_slug is None:
+            set_text(self.title, "BROWSE")
+            rows = [("", f"Show {len(st.visible)} Pokémon", "")]
+            rows += [
+                ("", label, browse.summary(slug)) for slug, label, _ in browse.shown_categories()
+            ]
+            self._show_rows(rows, st.browse_index)
+            hints = "▲▼ choose   A open   B back"
+            set_text(self.hints, hints + ("   SEL clear picks" if browse.count else ""))
+            return
+        label = next(c[1] for c in browse.categories if c[0] == st.browse_slug)
+        set_text(self.title, label.upper())
+        values = browse.values(st.browse_slug)
+        counts = browse.counts(st.browse_slug)
+        rows = [
+            ("✓" if browse.is_picked(st.browse_slug, k) else "", values[k][0], str(counts[k]))
+            for k in st.shown_values
+        ]
+        self._show_rows(rows, st.value_index)
+        set_text(self.hints, "▲▼ move   A pick   ◀▶ page   L/R letter   B done")
+
+    def _show_rows(self, rows, cursor):
+        total = len(rows)
+        top = max(0, min(cursor - self.ROWS // 2, total - self.ROWS))
+        for i, (tick, name, right) in enumerate(self.rows):
+            if top + i < total:
+                row = rows[top + i]
+                set_text(tick, row[0])
+                set_text(name, row[1])
+                fit(name, BODY_W - 140)
+                set_text(right, row[2])
+                fit(right, 100)
+            else:
+                set_text(tick, "")
+                set_text(name, "")
+                set_text(right, "")
+        if 0 <= cursor - top < self.ROWS:
+            self.highlight.x = BODY_X
+            self.highlight.y = BODY_Y + (cursor - top) * self.ROW_H
+        else:
+            self.highlight.x = OFFSCREEN
+        if total > self.ROWS:
+            track = self.ROWS * self.ROW_H
+            self.thumb.height = max(10, track * self.ROWS // total)
+            self.thumb.y = BODY_Y + (track - self.thumb.height) * top // (total - self.ROWS)
+        else:
+            self.thumb.y = OFFSCREEN
+
+
 SCREENS = {
     state.HOME: HomeScreen,
     state.LIST: ListScreen,
@@ -743,6 +1048,8 @@ SCREENS = {
     state.EVOLUTION: EvolutionScreen,
     state.SEARCH: SearchScreen,
     state.SETTINGS: SettingsScreen,
+    state.QUIZ: QuizScreen,
+    state.BROWSE: BrowseScreen,
 }
 
 
@@ -790,6 +1097,8 @@ class UI:
         """A message under the settings, e.g. when they couldn't be saved."""
         self._view = None
         self._screen = None
+        self.shiny = False
+        """Show shiny pictures (the setting), where the card has them."""
         self.battery = BatteryIcon()
         self._root = displayio.Group()
         """The current screen, with the battery icon on top."""
@@ -801,8 +1110,29 @@ class UI:
         self._root.append(group)
         self._root.append(self.battery.group)
 
+    def picture(self, folder, pokemon_id):
+        """A picture's path on the card: the shiny one when that's on and the card has it."""
+        if self.shiny:
+            path = self.records.existing("shiny/" + folder, pokemon_id, "bmp")
+            if path:
+                return path
+        return self.records.file(folder, pokemon_id, "bmp")
+
+    def splash(self):
+        """The start-up screen, shown while the jingle plays."""
+        self._view = None
+        group = displayio.Group()
+        rect(group, 0, 0, W, H, theme.ACCENT)
+        cx, cy = W // 2, H // 2 - 24
+        circle(group, cx, cy, 52, theme.WHITE)
+        circle(group, cx, cy, 44, theme.LENS)
+        circle(group, cx - 16, cy - 16, 10, theme.WHITE)  # the lens's shine
+        text(group, self.fonts.title, "POKÉDEX", theme.TEXT, cx, cy + 82, (0.5, 0.5))
+        self._set_screen(group)
+
     def show(self, st):
         """Draw the state: build the screen if the view changed, then update it."""
+        self.shiny = st.settings.shiny
         empty = st.selected is None and st.view in (state.LIST, state.DETAIL, state.EVOLUTION)
         if empty:
             self.message("POKÉDEX", "No Pokémon on the SD card.")

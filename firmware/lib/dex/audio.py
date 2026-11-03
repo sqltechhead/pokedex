@@ -28,26 +28,32 @@ class EntryAudio:
         output.play(self._mixer)
         self._buffer = bytearray(2048)
         self._file = None
-        self._next = None
-        """The narration waiting for the cry to finish."""
+        self._next = []
+        """What plays after the current sound, e.g. the narration after the cry."""
         self.enabled = True
         self.cry = True
         self.narration = True
 
     def play(self, pokemon_id):
         """Start the cry; its narration follows once the cry has finished."""
-        self.stop()  # a new entry cuts off the previous one when browsing quickly
-        if not self.enabled:
-            return
         paths = []
         if self.cry:
             paths.append(self._records.existing("cry", pokemon_id, "wav"))
         if self.narration:
             paths.append(self._records.existing("say", pokemon_id, "wav"))
+        self.play_paths(paths)
+
+    def play_paths(self, paths):
+        """Play these files one after another (missing ones, given as None, are skipped)."""
+        self.stop()  # a new sound cuts off the last one when browsing quickly
         paths = [path for path in paths if path]
-        if paths:
+        if self.enabled and paths:
             self._start(paths[0])
-            self._next = paths[1] if len(paths) > 1 else None
+            self._next = paths[1:]
+
+    @property
+    def busy(self):
+        return self._mixer.voice[0].playing or bool(self._next)
 
     def poll(self):
         """Call often from the main loop: starts the narration when the cry ends."""
@@ -55,11 +61,11 @@ class EntryAudio:
             return
         self._close()
         if self._next:
-            path, self._next = self._next, None
+            path, self._next = self._next[0], self._next[1:]
             self._start(path)
 
     def stop(self):
-        self._next = None
+        self._next = []
         self._mixer.voice[0].stop()
         self._close()
 

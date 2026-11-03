@@ -160,7 +160,7 @@ def test_builds_a_card(tmp_path, data: DataPaths, capsys):
     out = tmp_path / "sd"
     assert cli.main(["--data", str(data.root), "--out", str(out)]) == 0
     card = out / "pokedex"
-    assert (card / "index.tsv").read_text() == "25\tPikachu\tpikachu\telectric\t\n"
+    assert (card / "index.tsv").read_text() == "25\tPikachu\tpikachu\telectric\t\t\n"
     entry = json.loads((card / "mon" / "0025.json").read_text())
     assert entry["stats"] == [35, 55, 40, 50, 50, 90]
     assert entry["chain"] is None

@@ -61,8 +61,9 @@ class Backlight:
     def __init__(self, screen):
         self._screen = screen
 
-    def set(self, on):
-        self._screen.brightness = 1.0 if on else 0.0
+    def set(self, on, level=1.0):
+        """level is the Brightness setting, 0.1-1.0."""
+        self._screen.brightness = level if on else 0.0
 
 
 class Battery:

@@ -22,8 +22,23 @@ gotchas, and where things stand. The README covers usage.
   `firmware/st7796s.py`. XPT2046 touch shares the bus; TP_CS (GP26) is held
   high and touch is unused until calibrated on the real screen.
 - 10 buttons via `keypad.Keys` in `pins.BUTTON_NAMES` order: D-pad, A, B,
-  START (menu from anywhere), SELECT (replay entry / search results), L/R
-  (type filter in the list, ±10 on an entry).
+  START (menu from anywhere), SELECT (replay entry / search results / region
+  filter in the list), L/R (type filter in the list, ±10 on an entry). On an
+  entry ▲▼ = prev/next and ◀▶ = tabs (INFO, TYPES, ABILITIES, MOVES); on
+  MOVES ▲▼ scroll instead.
+- Features: list with type + region filters, entry tabs, evolution map,
+  search, "Who's that Pokémon?" quiz (`dex.quiz`, silhouettes `sil/`, score
+  kept for the session), shiny mode (off by default; `shiny/<folder>/`, falls back to normal),
+  the Pokédex always opens at #001 with filters cleared (Browse's Show keeps picks),
+  brightness (backlight 10-100%), start-up splash + original jingle, and
+  **Browse** (`dex.browse`): 17 categories built on the PC
+  (`sdcard/categories.py` → `cat/categories.tsv`, `cat/<slug>.tsv` labels and
+  totals, `cat/<slug>.bin` = per Pokémon in index order a count byte + u16 LE
+  value numbers, `cat/has.bin` = per category a bit per Pokémon). Picks OR
+  within a category, AND across categories, and AND with the type/region
+  filters. Faceted: counts are among Pokémon matching the *other* categories'
+  picks; zero-count values and empty categories are hidden (picked ones stay);
+  cursors index the shown lists. B in the list clears all filters incl. picks.
 - Audio: MAX98357A over I2S, two speakers in parallel; WAV through `audiomixer`.
 - Battery: divider on GP28, read every 30 s, icon top-right of every header
   (yellow below 3.45 V). Header text ends at `HEADER_RIGHT` to leave room.
@@ -38,11 +53,21 @@ gotchas, and where things stand. The README covers usage.
 - `src/pokedex/` (PC, CPython via uv): `models.py`, `db.py` (SQLite,
   `MIGRATIONS` dict), `paths.py`, `fetcher/` → `pokedex-fetch`, `narrator/` →
   `pokedex-narrate`, `sdcard/` → `pokedex-sdcard` (builds `build/sd/pokedex/`:
-  `index.tsv`, `mon/NNNN.json`, `art|spr|ev72|ev44|ev26/NNNN.bmp`, `cry|say/NNNN.wav`,
+  `index.tsv` (6th column = generation), `mon/NNNN.json` (incl. `region`,
+  `abilities`, `moves`, `moves_from`, `matchups`),
+  `art|spr|ev72|ev44|ev26|sil/NNNN.bmp`, `shiny/<same>/`, `cry|say/NNNN.wav`,
+  `sfx/startup|correct|wrong.wav` (synthesised in `sdcard/sounds.py`),
   `fonts/*.bdf`).
+- **Fetched data:** `pokedex-fetch` also stores generation, abilities,
+  level-up moves (newest *main* game via `MOVE_VERSIONS`: PokéAPI's version
+  group ids are NOT release order, e.g. blue-japan is 29), shiny artwork, and
+  tables `move`, `ability`, `type_effect`. Old rows are filled in by the
+  details pass (`generation IS NULL`) and the species pass (colour, shape,
+  habitat, legendary/mythical/baby, egg groups; `color IS NULL`). Level 0 =
+  learned on evolution. Starters are a hand-written list in `categories.py`.
 - `firmware/` (copied to CIRCUITPY): `code.py` → `lib/dex/app.py`. Pure,
   PC-tested modules: `state`, `index`, `records`, `search`, `keyboard`,
-  `evolution`, `settings`, `units`, `timing`, `theme`. Hardware-only:
+  `evolution`, `settings`, `units`, `timing`, `battery`, `quiz`, `browse`, `theme`. Hardware-only:
   `hardware`, `screens`, `audio`, `app` (untestable on the PC).
 - **Simulator:** `uv run --group sim python sim/pokedex_sim.py` runs the real
   firmware on Blinka displayio in a pygame window (keyboard = buttons, swaps
@@ -86,17 +111,21 @@ gotchas, and where things stand. The README covers usage.
 ## Status (2026-11-03)
 
 - Done: Pico rewrite (firmware + `pokedex-sdcard`), firmware aligned to the
-  plan's parts and pins (ST7796S, 10 buttons, battery icon), 137 tests
-  passing, real card built from all 1,025 (~480 MB, ~2.5 min).
-- Simulator verified every screen (home, list, filter, entry, evolution incl.
-  Eevee and Oddish, search, settings, low battery).
+  plan's parts and pins (ST7796S, 10 buttons, battery icon); then brightness,
+  shiny mode, start-up jingle, quiz, type matchups, abilities, moves and the
+  region filter, then Browse by category (17 categories). 169 tests passing; full fetch done (no failures); real card
+  built from all 1,025 (~570 MB).
+- Simulator tour verified every screen, incl. the splash, quiz (question and
+  answer), all four entry tabs, the region filter, shiny mode and Browse
+  (Legendary → colour counts among legendaries; Baby hides Top 20). The tour's menu counts depend on MENU
+  order: adding a home entry shifts them.
 - **Never run on a Pico yet.** Unverified: ST7796S init/MADCTL/inversion, SPI
   speeds, RAM headroom, WAV streaming from SD, font load speed,
   CircuitPython-on-RP2350 module availability. First step: `import hw_test`.
-- Plan artifact updated 2026-11-03 (version 4): sections 1, 6, 7, 8 and 13
+- Plan artifact updated 2026-11-03 (version 7): sections 1, 6, 7, 8 and 13
   now describe the code as built (buttons, card layout, `pokedex-sdcard`),
   and its `pins.py` matches the repo's.
 - No README screenshots (the old pygame ones were removed).
 - GitHub `sqltechhead/pokedex`, branch `main`; stray `master` branch still
   to delete once the default branch is `main`.
-- Next ideas: caught tracking, battery level, themes, shiny mode.
+- Next ideas: caught tracking, touch, cry quiz, favourites/team, themes.

@@ -20,9 +20,9 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from pokedex.db import PokedexDB
-from pokedex.models import Pokemon
+from pokedex.models import Ability, Move, Pokemon
 from pokedex.paths import DEFAULT_DATA_DIR, DataPaths
-from pokedex.sdcard import audio, entries, fonts, images
+from pokedex.sdcard import audio, categories, entries, fonts, images, sounds
 
 DEFAULT_OUT = Path("build/sd")
 FIRMWARE_DIR = Path(__file__).parents[3] / "firmware"
@@ -31,6 +31,7 @@ FIRMWARE_DIR = Path(__file__).parents[3] / "firmware"
 # Picture sizes in pixels; the screens in firmware/lib/dex/screens.py are laid out for these.
 ART_BOX = 160  # entry screen
 PREVIEW_BOX = 112  # list preview
+QUIZ_BOX = ART_BOX  # silhouettes, the same size as the artwork they turn into
 EVOLUTION_BOXES = (72, 44, 26)  # evolution cards: big, three-way branches, Eevee's rows
 
 
@@ -57,10 +58,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     with PokedexDB(paths.db) as db:
         pokemon = db.all()
         chains = db.chains()
+        moves, abilities, chart = db.moves(), db.abilities(), db.type_chart()
     root = args.out / "pokedex"
 
-    write_entries(root, pokemon, chains)
-    write_fonts(root, pokemon)
+    write_entries(root, pokemon, chains, moves, abilities, chart)
+    cats = categories.build(pokemon, chains, moves, abilities, chart)
+    order = sorted(p.id for p in pokemon)  # index.tsv's order
+    print(f"Browse categories: {len(cats)}, {categories.write(cats, order, root / 'cat')} values")
+    write_fonts(root, pokemon, moves, abilities)
+    sounds.write_sounds(root / "sfx", force=args.force)
     failures = write_media(root, paths, pokemon, force=args.force)
     print(f"\nDone: {len(pokemon)} Pokémon in {root}")
     print("Copy the pokedex/ folder to the root of a FAT32 microSD card.")
@@ -70,16 +76,32 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def write_entries(root: Path, pokemon: list[Pokemon], chains: dict) -> None:
+def write_entries(
+    root: Path,
+    pokemon: list[Pokemon],
+    chains: dict,
+    moves: dict[int, Move],
+    abilities: dict[int, Ability],
+    chart: dict[tuple[str, str], float],
+) -> None:
     (root / "mon").mkdir(parents=True, exist_ok=True)
     (root / "index.tsv").write_text("\n".join(entries.index_lines(pokemon)) + "\n", "utf-8")
     for mon in pokemon:
-        (root / "mon" / f"{mon.id:04d}.json").write_text(entries.entry_json(mon, chains), "utf-8")
+        text = entries.entry_json(mon, chains, moves, abilities, chart)
+        (root / "mon" / f"{mon.id:04d}.json").write_text(text, "utf-8")
     print(f"Index and entries: {len(pokemon)} written")
+    if not moves or not chart:
+        print("  (no moves or type chart yet: run `uv run pokedex-fetch` to add them)")
 
 
-def write_fonts(root: Path, pokemon: list[Pokemon]) -> None:
+def write_fonts(
+    root: Path, pokemon: list[Pokemon], moves: dict[int, Move], abilities: dict[int, Ability]
+) -> None:
     texts = [f"{p.name} {p.genus or ''} {p.flavor_text}" for p in pokemon]
+    texts += [m.name for m in moves.values()]
+    texts += [f"{a.name} {a.description}" for a in abilities.values()]
+    texts += list(entries.VERSION_NAMES.values())
+    texts += [f"{c.label} {' '.join(c.values)}" for c in categories.build(pokemon, {}, {}, {}, {})]
     texts += [path.read_text("utf-8") for path in sorted(FIRMWARE_DIR.rglob("*.py"))]
     chars = fonts.charset(*texts)
     for spec in fonts.FONTS:
@@ -95,6 +117,7 @@ def write_media(root: Path, paths: DataPaths, pokemon: list[Pokemon], *, force: 
         sprite = _stored(paths, mon.sprite_path)
         hd_artwork = _stored(paths, mon.artwork_path)
         artwork = hd_artwork or sprite
+        shiny = _stored(paths, mon.shiny_artwork_path)
         name = f"{mon.id:04d}"
         jobs += [
             ("art", artwork, root / "art" / f"{name}.bmp", _picture(ART_BOX)),
@@ -109,6 +132,14 @@ def write_media(root: Path, paths: DataPaths, pokemon: list[Pokemon], *, force: 
             ),
             *(
                 ("evolution", artwork, root / f"ev{box}" / f"{name}.bmp", _picture(box))
+                for box in EVOLUTION_BOXES
+            ),
+            ("silhouette", artwork, root / "sil" / f"{name}.bmp", _silhouette),
+            # Shiny mode: the same pictures in shiny colours, under shiny/.
+            ("shiny", shiny, root / "shiny" / "art" / f"{name}.bmp", _picture(ART_BOX)),
+            ("shiny", shiny, root / "shiny" / "spr" / f"{name}.bmp", _picture(PREVIEW_BOX)),
+            *(
+                ("shiny", shiny, root / "shiny" / f"ev{box}" / f"{name}.bmp", _picture(box))
                 for box in EVOLUTION_BOXES
             ),
             ("cry", _stored(paths, mon.cry_path), root / "cry" / f"{name}.wav", _sound(ffmpeg)),
@@ -145,6 +176,10 @@ def _stored(paths: DataPaths, stored: str | None) -> Path | None:
 
 def _picture(box: int, pixel_art: bool = False) -> Callable[[Path, Path], None]:
     return lambda source, dest: images.to_bmp(source, dest, box, pixel_art=pixel_art)
+
+
+def _silhouette(source: Path, dest: Path) -> None:
+    images.silhouette(source, dest, QUIZ_BOX)
 
 
 def _sound(ffmpeg: str) -> Callable[[Path, Path], None]:

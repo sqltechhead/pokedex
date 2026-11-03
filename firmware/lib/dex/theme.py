@@ -9,6 +9,8 @@ MUTED = 0x96A0AC
 WHITE = 0xFFFFFF
 LENS = 0x3D9BE0
 LOW_BATTERY = 0xFFD23C
+RIGHT = 0x2E9E5B
+"""The quiz's correct answer."""
 """Yellow, as red wouldn't show on the red header."""
 
 # Canonical type order, also used to cycle the type filter and to number

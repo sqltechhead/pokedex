@@ -1,12 +1,13 @@
 """SQLite storage for Pokémon records and evolution chains."""
 
+import json
 import sqlite3
 from collections import defaultdict
 from pathlib import Path
 from types import TracebackType
 from typing import Self
 
-from pokedex.models import BaseStats, Evolution, EvolutionChain, Pokemon
+from pokedex.models import Ability, BaseStats, Evolution, EvolutionChain, Move, Pokemon
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS pokemon (
@@ -52,6 +53,29 @@ CREATE TABLE IF NOT EXISTS evolution (
     method    TEXT NOT NULL,
     PRIMARY KEY (chain_id, position)
 );
+
+-- Moves and abilities, shared by every Pokémon that has them.
+CREATE TABLE IF NOT EXISTS move (
+    id           INTEGER PRIMARY KEY,
+    name         TEXT NOT NULL,
+    type         TEXT NOT NULL,
+    power        INTEGER,
+    damage_class TEXT
+);
+CREATE TABLE IF NOT EXISTS ability (
+    id          INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT ''
+);
+
+-- How much damage an attacking type does to a defending type (2, 0.5 or 0;
+-- pairs not listed do normal damage).
+CREATE TABLE IF NOT EXISTS type_effect (
+    attacker   TEXT NOT NULL,
+    defender   TEXT NOT NULL,
+    multiplier REAL NOT NULL,
+    PRIMARY KEY (attacker, defender)
+);
 """
 
 # Columns added after the first release; ALTER TABLE brings old databases up to date.
@@ -60,7 +84,21 @@ MIGRATIONS = {
     "evolution_chain_id": "INTEGER",
     "cry_path": "TEXT",
     "narration_path": "TEXT",
+    "generation": "INTEGER",
+    "shiny_artwork_path": "TEXT",
+    "abilities": "TEXT",
+    "level_moves": "TEXT",
+    "move_version": "TEXT",
+    "color": "TEXT",
+    "shape": "TEXT",
+    "habitat": "TEXT",
+    "legendary": "INTEGER NOT NULL DEFAULT 0",
+    "mythical": "INTEGER NOT NULL DEFAULT 0",
+    "baby": "INTEGER NOT NULL DEFAULT 0",
+    "egg_groups": "TEXT",
 }
+JSON_COLUMNS = ("abilities", "level_moves", "egg_groups")
+"""Stored as JSON text: lists of small records."""
 
 STAT_COLUMNS = tuple(BaseStats.model_fields)
 
@@ -144,6 +182,91 @@ class PokedexDB:
                 "UPDATE pokemon SET narration_path = ? WHERE id = ?", (narration_path, pokemon_id)
             )
 
+    # Region, abilities, moves and shiny artwork
+
+    def ids_without_details(self) -> set[int]:
+        """Pokémon stored before regions, abilities and moves were fetched."""
+        rows = self._con.execute("SELECT id FROM pokemon WHERE generation IS NULL")
+        return {row["id"] for row in rows}
+
+    def set_details(self, pokemon: Pokemon) -> None:
+        """Update only the region, abilities, moves and shiny artwork of a stored Pokémon."""
+        row = _to_row(pokemon)
+        columns = ("generation", "shiny_artwork_path", *JSON_COLUMNS, "move_version")
+        with self._con:
+            self._con.execute(
+                f"UPDATE pokemon SET {', '.join(f'{c} = :{c}' for c in columns)} WHERE id = :id",
+                {c: row[c] for c in (*columns, "id")},
+            )
+
+    def ids_without_species_details(self) -> set[int]:
+        """Pokémon stored before colour, shape and the rest were fetched."""
+        rows = self._con.execute("SELECT id FROM pokemon WHERE color IS NULL")
+        return {row["id"] for row in rows}
+
+    def set_species_details(self, pokemon: Pokemon) -> None:
+        row = _to_row(pokemon)
+        columns = ("color", "shape", "habitat", "legendary", "mythical", "baby", "egg_groups")
+        with self._con:
+            self._con.execute(
+                f"UPDATE pokemon SET {', '.join(f'{c} = :{c}' for c in columns)} WHERE id = :id",
+                {c: row[c] for c in (*columns, "id")},
+            )
+
+    def missing_move_ids(self) -> set[int]:
+        """Moves some Pokémon learns that aren't in the move table yet."""
+        known = {row[0] for row in self._con.execute("SELECT id FROM move")}
+        return {m.move_id for p in self.all() for m in p.level_moves} - known
+
+    def missing_ability_ids(self) -> set[int]:
+        known = {row[0] for row in self._con.execute("SELECT id FROM ability")}
+        return {a.ability_id for p in self.all() for a in p.abilities} - known
+
+    def upsert_move(self, move: Move) -> None:
+        with self._con:
+            self._con.execute(
+                "INSERT OR REPLACE INTO move (id, name, type, power, damage_class)"
+                " VALUES (:id, :name, :type, :power, :damage_class)",
+                move.model_dump(),
+            )
+
+    def upsert_ability(self, ability: Ability) -> None:
+        with self._con:
+            self._con.execute(
+                "INSERT OR REPLACE INTO ability (id, name, description)"
+                " VALUES (:id, :name, :description)",
+                ability.model_dump(),
+            )
+
+    def moves(self) -> dict[int, Move]:
+        return {
+            row["id"]: Move.model_validate(dict(row))
+            for row in self._con.execute("SELECT * FROM move")
+        }
+
+    def abilities(self) -> dict[int, Ability]:
+        return {
+            row["id"]: Ability.model_validate(dict(row))
+            for row in self._con.execute("SELECT * FROM ability")
+        }
+
+    def set_type_effects(self, attacker: str, effects: dict[str, float]) -> None:
+        """Replace one attacking type's row of the chart."""
+        with self._con:
+            self._con.execute("DELETE FROM type_effect WHERE attacker = ?", (attacker,))
+            self._con.executemany(
+                "INSERT INTO type_effect (attacker, defender, multiplier) VALUES (?, ?, ?)",
+                [(attacker, defender, m) for defender, m in effects.items()],
+            )
+
+    def type_chart(self) -> dict[tuple[str, str], float]:
+        """(attacker, defender) -> multiplier, for pairs that aren't normal damage."""
+        rows = self._con.execute("SELECT * FROM type_effect")
+        return {(row["attacker"], row["defender"]): row["multiplier"] for row in rows}
+
+    def attacking_types(self) -> set[str]:
+        return {row[0] for row in self._con.execute("SELECT DISTINCT attacker FROM type_effect")}
+
     # Evolution chains
 
     def ids_without_chain(self) -> set[int]:
@@ -208,10 +331,14 @@ class PokedexDB:
 def _to_row(pokemon: Pokemon) -> dict[str, object]:
     row = pokemon.model_dump(exclude={"stats", "fetched_at"})
     row.update(pokemon.stats.model_dump())
+    for column in JSON_COLUMNS:
+        row[column] = json.dumps(row[column])
     return row
 
 
 def _from_row(row: sqlite3.Row) -> Pokemon:
     data = dict(row)
     data["stats"] = {column: data.pop(column) for column in STAT_COLUMNS}
+    for column in JSON_COLUMNS:
+        data[column] = json.loads(data[column]) if data.get(column) else ()
     return Pokemon.model_validate(data)

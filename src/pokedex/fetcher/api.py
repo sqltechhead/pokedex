@@ -52,6 +52,7 @@ class StatEntry(BaseModel):
 
 class Artwork(BaseModel):
     front_default: str | None = None
+    front_shiny: str | None = None
 
 
 class OtherSprites(BaseModel):
@@ -66,6 +67,10 @@ class Sprites(BaseModel):
     def artwork_url(self) -> str | None:
         return self.other.official_artwork.front_default if self.other else None
 
+    @property
+    def shiny_artwork_url(self) -> str | None:
+        return self.other.official_artwork.front_shiny if self.other else None
+
 
 class Cries(BaseModel):
     latest: str | None = None
@@ -74,8 +79,25 @@ class Cries(BaseModel):
     """Original Game Boy-era cry; older Pokémon only."""
 
 
+class AbilitySlot(BaseModel):
+    ability: NamedResource
+    is_hidden: bool = False
+    slot: int = 0
+
+
+class VersionGroupDetail(BaseModel):
+    level_learned_at: int
+    move_learn_method: NamedResource
+    version_group: NamedResource
+
+
+class MoveSlot(BaseModel):
+    move: NamedResource
+    version_group_details: list[VersionGroupDetail] = []
+
+
 class PokemonResponse(BaseModel):
-    """``/pokemon/{id}``: types, stats, size, image and cry URLs."""
+    """``/pokemon/{id}``: types, stats, size, abilities, moves, image and cry URLs."""
 
     id: int
     name: str
@@ -85,6 +107,8 @@ class PokemonResponse(BaseModel):
     stats: list[StatEntry]
     sprites: Sprites
     cries: Cries = Field(default_factory=Cries)
+    abilities: list[AbilitySlot] = []
+    moves: list[MoveSlot] = []
 
     @property
     def type_names(self) -> list[str]:
@@ -116,6 +140,14 @@ class SpeciesResponse(BaseModel):
     genera: list[LocalizedGenus]
     flavor_text_entries: list[FlavorTextEntry]
     evolution_chain: APIResource | None = None
+    generation: NamedResource | None = None
+    color: NamedResource | None = None
+    shape: NamedResource | None = None
+    habitat: NamedResource | None = None
+    is_legendary: bool = False
+    is_mythical: bool = False
+    is_baby: bool = False
+    egg_groups: list[NamedResource] = []
 
     @property
     def english_name(self) -> str:
@@ -176,6 +208,68 @@ class EvolutionChainResponse(BaseModel):
     chain: ChainLink
 
 
+class AbilityFlavorText(BaseModel):
+    flavor_text: str
+    language: NamedResource
+    version_group: NamedResource
+
+
+class AbilityResponse(BaseModel):
+    """``/ability/{id}``: display name and a short description."""
+
+    id: int
+    name: str
+    names: list[LocalizedName] = []
+    flavor_text_entries: list[AbilityFlavorText] = []
+
+    @property
+    def english_name(self) -> str:
+        return english_name(self.names, self.name)
+
+    @property
+    def description(self) -> str:
+        """The newest English in-game description."""
+        english = [e for e in self.flavor_text_entries if e.language.name == "en"]
+        if not english:
+            return ""
+        return clean_text(max(english, key=lambda e: e.version_group.id).flavor_text)
+
+
+class MoveResponse(BaseModel):
+    """``/move/{id}``: display name, type and power."""
+
+    id: int
+    name: str
+    names: list[LocalizedName] = []
+    type: NamedResource
+    power: int | None = None
+    damage_class: NamedResource | None = None
+
+    @property
+    def english_name(self) -> str:
+        return english_name(self.names, self.name)
+
+
+class DamageRelations(BaseModel):
+    double_damage_to: list[NamedResource] = []
+    half_damage_to: list[NamedResource] = []
+    no_damage_to: list[NamedResource] = []
+
+
+class TypeResponse(BaseModel):
+    """``/type/{name}``: how much damage this type's attacks do to each type."""
+
+    name: str
+    damage_relations: DamageRelations
+
+
+def english_name(names: list[LocalizedName], fallback: str) -> str:
+    """The English name, else the slug made readable ("thunder-shock" -> "Thunder Shock")."""
+    return next(
+        (n.name for n in names if n.language.name == "en"), fallback.replace("-", " ").title()
+    )
+
+
 def clean_text(text: str) -> str:
     """Strip the original games' line/page breaks and soft hyphens from flavour text."""
     text = text.replace("\f", " ").replace("\n", " ").replace("­", "")
@@ -226,6 +320,19 @@ class PokeAPIClient:
         return EvolutionChainResponse.model_validate_json(
             self._get(f"{self.base_url}/evolution-chain/{chain_id}").content
         )
+
+    def ability(self, ability_id: int) -> AbilityResponse:
+        return AbilityResponse.model_validate_json(
+            self._get(f"{self.base_url}/ability/{ability_id}").content
+        )
+
+    def move(self, move_id: int) -> MoveResponse:
+        return MoveResponse.model_validate_json(
+            self._get(f"{self.base_url}/move/{move_id}").content
+        )
+
+    def type(self, name: str) -> TypeResponse:
+        return TypeResponse.model_validate_json(self._get(f"{self.base_url}/type/{name}").content)
 
     def download(self, url: str, dest: Path) -> None:
         dest.write_bytes(self._get(url).content)

@@ -32,12 +32,16 @@ Browse or search all 1,025 Pokémon, see their stats and evolutions, and hear ea
 
 ## ✨ Features
 
-- 📖 **Browse all 1,025.** A scrolling list with a picture preview and type colours. L and R filter by type; holding the D-pad scrolls.
-- 📊 **Full entries.** Artwork, types, height and weight, base stats and Pokédex text.
+- 📖 **Browse all 1,025.** A scrolling list with a picture preview and type colours. L and R filter by type, SELECT by region (Kanto to Paldea); holding the D-pad scrolls.
+- 📊 **Full entries, in four tabs.** Info (artwork, types, size, base stats, Pokédex text), type matchups (weak to, resists, not affected by), abilities with descriptions, and level-up moves with type and power.
 - 🧬 **Evolution chains.** Branches like Eevee's fan out with how each evolution happens ("Lv. 16", "Fire Stone"). Jump to any member.
+- 🗂️ **Browse by category.** Pick from colour, shape, size, weight, legendary/mythical/baby/starter, type, region, species category, habitat, evolution, weaknesses, top-20 stats, ability, move or egg group, across as many categories as you like. Picks in one category widen the list (pink *or* white); picks in different categories narrow it (pink *and* four legs). Counts update as you pick: choose Legendary and every other category only shows values some legendary has, with their counts, and categories with nothing left disappear.
 - 🔎 **Search without a keyboard.** An on-screen keyboard for the D-pad, by name or number; "mrmime" finds Mr. Mime.
+- ❓ **Who's that Pokémon?** A quiz: guess the silhouette from four names, then see the artwork and hear its cry. Keeps score.
+- ✨ **Shiny mode.** A setting that shows every Pokémon in its shiny colours.
 - 🔊 **Cries and narration.** Each entry plays the Pokémon's cry, then reads itself aloud: *"Pikachu, the Mouse Pokémon. When several of these Pokémon gather…"* SELECT plays it again.
-- ⚙️ **Settings that stick.** Volume, sound, units and screen sleep, saved on the SD card.
+- 🎵 **Start-up jingle.** An original tune and logo when it switches on.
+- ⚙️ **Settings that stick.** Volume, sound, brightness, shiny, units and screen sleep, saved on the SD card.
 - 🔋 **Battery friendly.** The screen only redraws what changed after a button press, and turns off when idle.
 - 📴 **No network needed.** Everything is prepared on your computer once and read from a microSD card.
 
@@ -62,13 +66,14 @@ uv sync
 
 ```sh
 uv run pokedex-fetch --last 1025                # all 1,025 Pokémon from PokéAPI (or omit --last for Gen 1)
+                                                # about an hour the first time: moves, abilities, shiny art too
 uv run --extra narrate pokedex-narrate          # optional: spoken entries
 ```
 
 ### 3. Build the SD card
 
 ```sh
-uv run pokedex-sdcard                           # writes build/sd/pokedex/ (about 480 MB for all 1,025)
+uv run pokedex-sdcard                           # writes build/sd/pokedex/ (about 570 MB for all 1,025)
 ```
 
 Copy the `pokedex` folder to the root of a **FAT32** microSD card. CircuitPython can't read exFAT, which is how most cards over 32 GB come formatted. Re-running only converts what's new.
@@ -128,23 +133,28 @@ The Pico 2 has 520 KB of RAM and runs CircuitPython, so all the heavy lifting ha
 | --- | --- | --- |
 | `index.tsv` | the database | Every name, number and type, small enough to keep in memory for the list and search |
 | `mon/0025.json` | the database | One entry, read only when it's shown |
+| `cat/` | every category | One compact file per category listing each Pokémon's values, worked out on the PC, so the Pico recounts a category with a single read |
+| `mon/0025.json` also holds | moves, abilities, type chart | Level-up moves, abilities with descriptions, and the type matchups worked out for this Pokémon's types |
 | `art/`, `spr/`, `ev72/` (and smaller) `0025.bmp` | official artwork (game sprites if missing) | 8-bit BMPs sized for each screen, which displayio streams straight from the card |
+| `shiny/art/` (and the others) | shiny artwork | The same pictures in shiny colours, for shiny mode |
+| `sil/0025.bmp` | official artwork | A one-colour silhouette for the quiz |
 | `cry/`, `say/` `0025.wav` | cries and narration | Mono 16-bit WAV, which the Pico plays without decoding |
+| `sfx/*.wav` | made from scratch | The start-up jingle and the quiz's right and wrong sounds, all original |
 | `fonts/*.bdf` | DejaVu Sans | Bitmap fonts with only the characters used (including é, ♀ and the button arrows) |
 
 ---
 
 ## 🎮 Controls
 
-| Button | Home | Search | Settings | List | Entry | Evolution |
-| :---: | --- | --- | --- | --- | --- | --- |
-| ▲▼ | Choose | Move on keyboard / results | Choose | Move (hold to scroll) | Prev / next | Between branches |
-| ◀▶ | | Move on keyboard | Change value | Jump a page | Prev / next | Between stages |
-| **A** | Open | Type key / open result | Flip switch | Open entry | Evolution chain | Open that entry |
-| **B** | | Delete letter, then home | Back home | Clear filter, then home | Back to list or search | Back to entry |
-| **SELECT** | | Jump to results | | | Play cry and entry again | |
-| **L / R** | | | | Previous / next type filter | Back / forward 10 | |
-| **START** | | Menu (home) from any screen | | | | |
+| Button | Home | Search | Browse | Settings | List | Entry | Evolution | Quiz |
+| :---: | --- | --- | --- | --- | --- | --- | --- | --- |
+| ▲▼ | Choose | Move on keyboard / results | Choose | Choose | Move (hold to scroll) | Prev / next (on Moves: scroll) | Between branches | Choose a name |
+| ◀▶ | | Move on keyboard | Page through values | Change value | Jump a page | Switch tab: Info, Types, Abilities, Moves | Between stages | |
+| **A** | Open | Type key / open result | Open a category; pick or unpick a value (✓); "Show" opens the list | Flip switch | Open entry | Evolution chain | Open that entry | Answer, then next |
+| **B** | | Delete letter, then home | Back to categories, then home | Back home | Clear all filters, then home | Back to list or search | Back to entry | Stop |
+| **SELECT** | | Jump to results | Clear all picks | | Cycle region filter | Play cry and entry again | | |
+| **L / R** | | | Jump to the next / previous letter | | Previous / next type filter | Back / forward 10 | | |
+| **START** | | Menu (home) from any screen | | | | | | |
 
 The battery level shows at the top right of every screen, turning yellow when it's low.
 
@@ -156,7 +166,9 @@ Changed on the device and saved to `settings.json` on the SD card.
 
 | Setting | Options |
 | --- | --- |
-| **Volume**, **Sound**, **Cries**, **Read entries aloud** | What plays when an entry opens. |
+| **Volume**, **Sound**, **Cries**, **Read entries aloud** | What plays when an entry opens. Sound also covers the start-up jingle and quiz sounds. |
+| **Brightness** | The screen's backlight, 10% to 100%. Lower saves battery. |
+| **Shiny Pokémon** | Off by default. Shows the shiny artwork everywhere (falls back to normal where a Pokémon has none). |
 | **Units** | Metric (1.7 m, 90.5 kg) or imperial (5'07", 199.5 lbs), as the games show them. |
 | **Screen sleep** | Turn the backlight off after 1, 2, 5 or 10 idle minutes, or never. Any button wakes it, and that press does nothing else. |
 
@@ -199,7 +211,7 @@ src/pokedex/            PC tools (CPython, managed by uv)
   paths.py              DataPaths: where everything in data/ lives
   fetcher/              pokedex-fetch: PokéAPI client, records, evolution chains
   narrator/             pokedex-narrate: entry text, Piper voice, device effect
-  sdcard/               pokedex-sdcard: index and entries, BMPs, WAVs, BDF fonts
+  sdcard/               pokedex-sdcard: index and entries, categories, BMPs, WAVs, BDF fonts, sound effects
 firmware/               copied to the Pico's CIRCUITPY drive
   code.py               runs at power-on
   pins.py               pin map, from the Pokédex Handheld Plan
@@ -217,6 +229,8 @@ firmware/               copied to the Pico's CIRCUITPY drive
     settings.py         settings and saving them (pure, tested)
     units.py            metric and imperial (pure, tested)
     timing.py           screen sleep and button repeat (pure, tested)
+    quiz.py             Who's that Pokémon? questions and score (pure, tested)
+    browse.py           browse by category: picks and matches (pure, tested)
     battery.py          battery voltage to the header icon (pure, tested)
     screens.py          draws every screen with displayio
     audio.py            cry then narration over I2S
@@ -236,9 +250,10 @@ docs/hardware.md        parts, pins, wiring, build order (mirrors the plan)
 
 ```
 data/
-  pokedex.db           SQLite: pokemon, evolution_chain, evolution
+  pokedex.db           SQLite: pokemon, evolution_chain, evolution, move, ability, type_effect
   sprites/0025.png     96×96 game sprite
   artwork/0025.png     475×475 official artwork
+  artwork-shiny/0025.png  the same, shiny
   cries/0025.ogg       modern cry (some are MP3 inside; ffmpeg reads both)
   narration/0025.ogg   spoken entry (pokedex-narrate)
   voices/              Piper voices (only for pokedex-narrate)
@@ -256,6 +271,7 @@ Query the database directly with `sqlite3 -header -column data/pokedex.db`.
 - Speech by [**Piper**](https://github.com/OHF-Voice/piper1-gpl); voice models from [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices).
 - Firmware on [**CircuitPython**](https://circuitpython.org) with Adafruit's display_text and bitmap_font libraries.
 - Text in [**DejaVu Sans**](https://dejavu-fonts.github.io/), whose licence is in [`src/pokedex/sdcard/fonts/`](src/pokedex/sdcard/fonts/).
+- Built with [**Claude**](https://claude.ai) by Anthropic, using [Claude Code](https://claude.com/claude-code): the code, the docs and the hardware plan were written together with it.
 
 <div align="center">
 <sub>A personal fan project. Pokémon and Pokémon character names are trademarks of Nintendo, Creatures Inc. and GAME FREAK inc. This project is not affiliated with or endorsed by them.</sub>
